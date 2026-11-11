@@ -675,16 +675,32 @@ const GOOGLE_PLAY_DEVICES_URL = "https://cdn.jsdelivr.net/gh/bsthen/device-model
 // Android handhelds whose commercial names are not consistently present in Google Play's catalog.
 // The models are Android-origin devices; Armada's list is used only as a cross-check for model names.
 const ANDROID_HANDHELD_DEVICES = [
+    // AYN
     "AYN Thor", "AYN Thor Lite", "AYN Odin 2", "AYN Odin 2 Mini",
     "AYN Odin 2 Portal", "AYN Odin 3", "AYN Odin 3 Portal",
+    // Retroid
     "Retroid Pocket 5", "Retroid Pocket 6", "Retroid Pocket Mini",
     "Retroid Pocket Mini V2", "Retroid Pocket Flip 2", "Retroid Pocket Duo",
     "Retroid Pocket Nova",
+    // AYANEO
     "AYANEO Pocket EVO", "AYANEO Pocket S2", "AYANEO Pocket ACE",
     "AYANEO Pocket DS", "AYANEO Pocket DMG", "AYANEO Pocket MICRO 2",
     "AYANEO Pocket S 2K", "AYANEO Pocket S 1K",
+    // KONKR and MANGMI
     "KONKR Pocket FIT (8 Elite)", "KONKR Pocket FIT (G3 Gen 3)",
-    "MANGMI AIR Y Pro (8 GB)", "MANGMI Pocket Max"
+    "MANGMI AIR Y Pro (8 GB)", "MANGMI Pocket Max",
+    // Anbernic models with official Android firmware or Android preinstalled
+    "Anbernic RG353V", "Anbernic RG353M", "Anbernic RG353P",
+    "Anbernic RG552", "Anbernic RG DS", "Anbernic RG505",
+    "Anbernic RG556", "Anbernic RG Cube", "Anbernic RG405V",
+    "Anbernic RG405M", "Anbernic RG406V", "Anbernic RG406H",
+    "Anbernic RG557",
+    // Powkiddy Android models
+    "Powkiddy X18S", "Powkiddy X28", "Powkiddy RGB10 Max 3 Pro",
+    // Other Android handhelds
+    "GPD XP", "GPD XP Plus", "Logitech G Cloud", "Abxylute One",
+    "KT-R1", "Pimax Portal", "ZPG A1 Unicorn", "MOQI i7S",
+    "TJD T80"
 ];
 
 async function handleImportDevices(request, env) {
