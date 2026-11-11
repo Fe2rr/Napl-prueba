@@ -5,7 +5,7 @@
  * used by both index.html and game.html (no duplicate fetches).
  */
 
-import { CATALOG_API_BASE, SHEET_URL } from "./config.js";
+import { CATALOG_API_BASE } from "./config.js";
 import {
     normalizeHeader,
     normalizeText,
@@ -283,87 +283,56 @@ export async function loadCatalog(force = false) {
     }
 
     catalogPromise = (async () => {
-        if (CATALOG_API_BASE) {
-            const response = await fetch(`${CATALOG_API_BASE}/catalog`, {
-                method: "GET",
-                cache: "default",
-            });
-
-            if (!response.ok) {
-                throw new Error(
-                    `Catalog API returned HTTP ${response.status}.`
-                );
-            }
-
-            const data = await response.json();
-            if (!data?.success || !Array.isArray(data.games)) {
-                throw new Error("Catalog API returned an invalid response.");
-            }
-
-            const allRows = [];
-            for (const game of data.games) {
-                for (const port of game.ports || []) {
-                    allRows.push({
-                        ...port,
-                        game: port.game || game.name,
-                        year: port.year || game.year || "",
-                        coverUrl: game.coverUrl || "",
-                        genre: game.genre || "",
-                        description: game.description || "",
-                    });
-                }
-            }
-
-            return {
-                games: data.games,
-                platformOrder: Array.isArray(data.platforms)
-                    ? data.platforms
-                    : [],
-                allRows,
-            };
+        if (!CATALOG_API_BASE) {
+            throw new Error("The NAPL catalog API is not configured.");
         }
 
-        const response = await fetch(SHEET_URL, {
+        const response = await fetch(`${CATALOG_API_BASE}/catalog`, {
             method: "GET",
-            cache: "no-store",
+            cache: "default",
         });
 
         if (!response.ok) {
-            throw new Error(`The spreadsheet returned HTTP ${response.status}.`);
+            throw new Error(`Catalog API returned HTTP ${response.status}.`);
         }
 
-        const csv = await response.text();
-        if (!csv || !csv.trim()) {
-            throw new Error("The spreadsheet returned an empty response.");
+        const data = await response.json();
+        if (
+            !data?.success ||
+            !Array.isArray(data.games) ||
+            !Array.isArray(data.platforms)
+        ) {
+            throw new Error("Catalog API returned an invalid response.");
         }
 
-        const rawRows = parseCSV(csv);
-        if (!Array.isArray(rawRows) || rawRows.length === 0) {
-            throw new Error("No rows were found in the spreadsheet.");
+        const games = data.games.map((game) => ({
+            ...game,
+            ports: Array.isArray(game.ports) ? game.ports : [],
+            platforms: Array.isArray(game.platforms) ? game.platforms : [],
+        }));
+
+        const allRows = [];
+        for (const game of games) {
+            for (const port of game.ports) {
+                allRows.push({
+                    ...port,
+                    game: port.game || game.name,
+                    year: port.year || game.year || "",
+                    coverUrl: game.coverUrl || "",
+                    genre: game.genre || "",
+                    description: game.description || "",
+                });
+            }
         }
 
-        const platformOrder = extractPlatformOrder(rawRows);
-        const processedRows = processRows(rawRows);
-
-        if (!processedRows.length) {
-            throw new Error(
-                "No valid game entries were found. Check the spreadsheet column names and data."
-            );
-        }
-
-        const games = groupGames(processedRows);
         if (!games.length) {
-            throw new Error("The spreadsheet could not be grouped into games.");
+            throw new Error("The catalog API returned no games.");
         }
-
-        games.sort((a, b) =>
-            a.name.localeCompare(b.name, "en", { sensitivity: "base" })
-        );
 
         return {
             games,
-            platformOrder,
-            allRows: processedRows,
+            platformOrder: data.platforms,
+            allRows,
         };
     })().catch((err) => {
         catalogPromise = null;
