@@ -7,16 +7,29 @@ El Worker del catálogo utiliza dos bases D1 independientes. El Worker y la base
 | `DB` | `napl-db` | Juegos, ports, plataformas, desarrolladores, categorías, visitas/popularidad y reportes de enlaces |
 | `DEVICES_DB` | `napl-devices-db` | Modelos Android y reportes de compatibilidad |
 
-## 1. Aplicar los esquemas
+## 1. Comprobar las bases y aplicar los esquemas
 
-Ejecutar desde esta carpeta:
+Primero iniciar sesión en Cloudflare si Wrangler todavía no está conectado:
+
+```sh
+npx wrangler login
+```
+
+Desde esta carpeta, comprobar que las bases no tengan tablas previas:
+
+```sh
+npx wrangler d1 execute napl-db --remote --command="SELECT name FROM sqlite_master WHERE type='table' ORDER BY name;"
+npx wrangler d1 execute napl-devices-db --remote --command="SELECT name FROM sqlite_master WHERE type='table' ORDER BY name;"
+```
+
+Si ambas están vacías, aplicar los esquemas:
 
 ```sh
 npx wrangler d1 execute napl-db --remote --file=./schema.sql
 npx wrangler d1 execute napl-devices-db --remote --file=./devices-schema.sql
 ```
 
-Esto crea las tablas, pero no importa registros.
+Si aparece alguna tabla, detenerse y revisar el esquema existente antes de aplicar cambios. La creación de tablas no importa registros.
 
 ## 2. Importar el catálogo desde el CSV
 
