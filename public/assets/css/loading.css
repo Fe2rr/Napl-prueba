@@ -1,0 +1,47 @@
+/* =========================================================
+   NAPL — LOADING, STATUS & ERROR STATES
+   ========================================================= */
+
+#status,
+.home-loading,
+.no-results {
+  margin: 12px 0;
+  font-size: 14px;
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+
+.error {
+  grid-column: 1 / -1;
+  padding: 18px 20px;
+  background: var(--error-bg);
+  border: 1px solid var(--error-border);
+  border-radius: var(--radius-md);
+  color: var(--error-text);
+}
+
+.error strong {
+  display: block;
+  margin-bottom: 4px;
+  font-family: var(--font-display);
+}
+
+.error p {
+  margin: 0 0 12px;
+  font-size: 14px;
+}
+
+.retry-button {
+  min-height: 40px;
+  padding: 8px 16px;
+  background: var(--cta-bg);
+  color: #fff;
+  border-radius: var(--radius-sm);
+  font-weight: 600;
+  font-size: 13px;
+  transition: background-color var(--duration-fast) var(--ease-out);
+}
+
+.retry-button:hover {
+  background: var(--cta-hover);
+}

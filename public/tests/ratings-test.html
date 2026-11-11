@@ -1,0 +1,405 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#062e2b">
+  <title>NAPL — Ratings Test</title>
+
+  <style>
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      padding: 24px 16px;
+      background: #061f1e;
+      color: #e5eeee;
+      font-family: Arial, sans-serif;
+    }
+
+    main {
+      max-width: 650px;
+      margin: 0 auto;
+    }
+
+    h1 {
+      color: #8bd5b5;
+      font-size: 25px;
+      margin-bottom: 5px;
+    }
+
+    .subtitle {
+      color: #91aaa5;
+      margin-top: 0;
+      margin-bottom: 28px;
+    }
+
+    .panel {
+      background: #0b302d;
+      border: 1px solid #20514a;
+      border-radius: 12px;
+      padding: 18px;
+      margin-bottom: 16px;
+    }
+
+    h2 {
+      font-size: 17px;
+      margin-top: 0;
+      color: #a6dfc5;
+    }
+
+    button {
+      background: #16775b;
+      color: white;
+      border: 0;
+      border-radius: 7px;
+      padding: 11px 15px;
+      font-size: 14px;
+      font-weight: bold;
+      cursor: pointer;
+      margin: 5px 5px 5px 0;
+    }
+
+    button:disabled {
+      opacity: .5;
+      cursor: wait;
+    }
+
+    button.secondary {
+      background: #24504a;
+    }
+
+    input, select {
+      width: 100%;
+      background: #071f1e;
+      color: white;
+      border: 1px solid #37645b;
+      border-radius: 7px;
+      padding: 12px;
+      margin: 7px 0 13px;
+      font-size: 15px;
+    }
+
+    label {
+      display: block;
+      color: #b9d0ca;
+      font-size: 13px;
+      margin-top: 10px;
+    }
+
+    .result {
+      background: #061f1e;
+      border-radius: 7px;
+      padding: 12px;
+      margin-top: 12px;
+      font-size: 13px;
+      overflow-wrap: anywhere;
+      white-space: pre-wrap;
+      color: #b9d0ca;
+      min-height: 40px;
+    }
+
+    .success { color: #79dda8; }
+    .error { color: #ff8585; }
+
+    .warning {
+      color: #e8c77b;
+      font-size: 13px;
+      line-height: 1.5;
+    }
+
+    .small {
+      font-size: 12px;
+      color: #91aaa5;
+      line-height: 1.5;
+    }
+  </style>
+</head>
+
+<body>
+<main>
+
+  <h1>NAPL Ratings Test</h1>
+  <p class="subtitle">Worker and database diagnostics</p>
+
+  <section class="panel">
+    <h2>1. Worker connection</h2>
+    <button id="checkRatings">Check ratings API</button>
+    <div id="ratingsResult" class="result">Not tested yet.</div>
+  </section>
+
+  <section class="panel">
+    <h2>2. User token</h2>
+    <button id="getToken">Get or reuse token</button>
+    <button id="checkVotes" class="secondary">Load my votes</button>
+    <div id="tokenResult" class="result">No token loaded.</div>
+    <div id="votesResult" class="result">Votes not loaded.</div>
+  </section>
+
+  <section class="panel">
+    <h2>3. Submit a test rating</h2>
+
+    <p class="warning">
+      Attention: submitting a rating creates a real public vote
+      and affects that port's average. Use a valid PORTS_ID.
+    </p>
+
+    <label for="portId">PORTS_ID</label>
+    <input id="portId" type="text"
+      placeholder="Example: castlevania-symphony-android"
+      autocomplete="off">
+
+    <label for="stars">Rating</label>
+    <select id="stars">
+      <option value="1">1 — AI Slop</option>
+      <option value="2">2 — Just emulate it bro</option>
+      <option value="3">3 — Decent</option>
+      <option value="4">4 — Good Port</option>
+      <option value="5">5 — Gem</option>
+    </select>
+
+    <button id="submitVote">Submit rating</button>
+    <div id="voteResult" class="result">No rating submitted.</div>
+  </section>
+
+  <section class="panel">
+    <h2>4. Refresh ratings</h2>
+    <button id="refreshRatings">Refresh ratings</button>
+    <div id="refreshResult" class="result">Not tested yet.</div>
+  </section>
+
+  <p class="small">
+    NAPL — Native Android Port List<br>
+    Temporary diagnostic page.
+  </p>
+
+</main>
+
+<script>
+const API =
+  "https://ports-ratings-worker.federicoxastro.workers.dev";
+
+const TOKEN_KEY = "napl_rating_token_v1";
+
+const $ = id => document.getElementById(id);
+
+function show(id, message, type = "") {
+  const element = $(id);
+  element.textContent = message;
+  element.className = "result " + type;
+}
+
+async function request(path, options = {}) {
+  let response;
+
+  try {
+    response = await fetch(API + path, options);
+  } catch (error) {
+    throw new Error(
+      "Network/CORS error: " + error.message
+    );
+  }
+
+  const text = await response.text();
+
+  let data;
+
+  try {
+    data = JSON.parse(text);
+  } catch {
+    throw new Error(
+      `Invalid server response (HTTP ${response.status}): ${text.slice(0, 200)}`
+    );
+  }
+
+  if (!response.ok) {
+    throw new Error(
+      data.error || `HTTP ${response.status}`
+    );
+  }
+
+  return data;
+}
+
+function post(path, body) {
+  return request(path, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify(body)
+  });
+}
+
+/* GET /ratings */
+
+$("checkRatings").addEventListener("click", async () => {
+  show("ratingsResult", "Checking...");
+
+  try {
+    const data = await request("/ratings");
+
+    show(
+      "ratingsResult",
+      JSON.stringify(data, null, 2),
+      "success"
+    );
+
+  } catch (error) {
+    show("ratingsResult", "ERROR: " + error.message, "error");
+  }
+});
+
+/* TOKEN */
+
+$("getToken").addEventListener("click", async () => {
+  show("tokenResult", "Requesting token...");
+
+  try {
+    let token = localStorage.getItem(TOKEN_KEY);
+
+    if (token) {
+      show(
+        "tokenResult",
+        "Existing NAPL token found and reused.",
+        "success"
+      );
+      return;
+    }
+
+    const data = await post("/token", {});
+
+    if (!data.token) {
+      throw new Error("Token missing from response.");
+    }
+
+    token = data.token;
+
+    localStorage.setItem(TOKEN_KEY, token);
+
+    show(
+      "tokenResult",
+      "New token generated and saved successfully.",
+      "success"
+    );
+
+  } catch (error) {
+    show("tokenResult", "ERROR: " + error.message, "error");
+  }
+});
+
+/* MY VOTES */
+
+$("checkVotes").addEventListener("click", async () => {
+  show("votesResult", "Loading votes...");
+
+  try {
+    const token = localStorage.getItem(TOKEN_KEY);
+
+    if (!token) {
+      throw new Error("Get a token first.");
+    }
+
+    const data = await post("/my-votes", { token });
+
+    const count = Object.keys(data.votes || {}).length;
+
+    show(
+      "votesResult",
+      `Votes found: ${count}\n\n` +
+      JSON.stringify(data.votes, null, 2),
+      "success"
+    );
+
+  } catch (error) {
+    show("votesResult", "ERROR: " + error.message, "error");
+  }
+});
+
+/* SUBMIT VOTE */
+
+$("submitVote").addEventListener("click", async () => {
+  const portId = $("portId").value.trim();
+  const stars = Number($("stars").value);
+
+  if (!portId) {
+    show("voteResult", "Enter a PORTS_ID first.", "error");
+    return;
+  }
+
+  const token = localStorage.getItem(TOKEN_KEY);
+
+  if (!token) {
+    show("voteResult", "Get a token first.", "error");
+    return;
+  }
+
+  const confirmed = confirm(
+    `Submit ${stars} stars for port:\n${portId}\n\n` +
+    "This is a real public rating. Continue?"
+  );
+
+  if (!confirmed) return;
+
+  show("voteResult", "Submitting vote...");
+
+  try {
+    const data = await post("/vote", {
+      token,
+      port_id: portId,
+      stars
+    });
+
+    show(
+      "voteResult",
+      JSON.stringify(data, null, 2),
+      "success"
+    );
+
+  } catch (error) {
+    show("voteResult", "ERROR: " + error.message, "error");
+  }
+});
+
+/* REFRESH RATINGS */
+
+$("refreshRatings").addEventListener("click", async () => {
+  show("refreshResult", "Refreshing...");
+
+  try {
+    const data = await request("/ratings");
+
+    const portId = $("portId").value.trim();
+
+    const rating = data.ports.find(
+      item => item.port_id === portId
+    );
+
+    if (!rating) {
+      show(
+        "refreshResult",
+        "API working.\n\nNo rating found for this PORTS_ID.\n\n" +
+        JSON.stringify(data, null, 2),
+        "success"
+      );
+      return;
+    }
+
+    show(
+      "refreshResult",
+      `Port: ${rating.port_id}\n` +
+      `Average: ${rating.avg}\n` +
+      `Votes: ${rating.votes}\n` +
+      `Bayesian score: ${rating.score}`,
+      "success"
+    );
+
+  } catch (error) {
+    show("refreshResult", "ERROR: " + error.message, "error");
+  }
+});
+</script>
+
+</body>
+</html>

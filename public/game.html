@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <!-- Google AdSense -->
+    <script async
+        src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-6826586907052847"
+        crossorigin="anonymous">
+    </script>
+
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Game Details — NAPL</title>
+    <meta
+        name="description"
+        content="Explore native Android ports, supported versions, compatibility information, and details for your favorite games."
+    >
+    <meta name="theme-color" content="#060e0b">
+
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link
+        href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@500;600;700&family=Space+Grotesk:wght@600;700&display=swap"
+        rel="stylesheet"
+    >
+
+    <script>
+        try {
+            var t = localStorage.getItem("napl_theme_v1");
+            if (t === "light" || t === "dark") {
+                document.documentElement.setAttribute("data-theme", t);
+            }
+        } catch (e) {}
+    </script>
+    <link rel="stylesheet" href="assets/css/main.css?v=5">
+    <link rel="stylesheet" href="assets/css/components.css?v=5">
+    <link rel="stylesheet" href="assets/css/loading.css?v=5">
+    <link rel="stylesheet" href="assets/css/game.css?v=5">
+</head>
+
+<body>
+<header>
+    <button
+        id="menu-button"
+        type="button"
+        aria-label="Open menu"
+        aria-controls="side-menu"
+        aria-expanded="false"
+    >
+        ☰
+    </button>
+
+    <h1 id="home-button" role="button" tabindex="0">NAPL</h1>
+
+    <div class="header-actions">
+        <button
+            id="theme-toggle"
+            type="button"
+            aria-label="Switch to light mode"
+            aria-pressed="false"
+        ></button>
+
+        <button
+            id="search-button"
+            type="button"
+            aria-label="Open search"
+            aria-controls="search-container"
+            aria-expanded="false"
+        >
+            <svg
+                class="search-icon"
+                xmlns="http://www.w3.org/2000/svg"
+                width="22"
+                height="22"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                aria-hidden="true"
+            >
+                <circle cx="11" cy="11" r="7"></circle>
+                <path d="m20 20-4-4"></path>
+            </svg>
+        </button>
+    </div>
+</header>
+
+<div id="menu-overlay" aria-hidden="true"></div>
+
+<nav id="side-menu" aria-label="Main navigation" aria-hidden="true">
+    <button id="menu-close" type="button" aria-label="Close menu">×</button>
+
+    <h2>Games</h2>
+
+    <a class="platform-button" href="index.html?view=all-games">
+        All Games
+    </a>
+
+    <h2>Categories</h2>
+
+    <div id="platform-list" aria-live="polite">
+        <div class="menu-separator">Loading platforms...</div>
+    </div>
+</nav>
+
+<main>
+    <div id="search-container" class="search-container" hidden>
+        <input
+            type="search"
+            id="search"
+            placeholder="Search game..."
+            autocomplete="off"
+            aria-label="Search games"
+            aria-controls="search-results"
+        >
+        <div
+            id="search-results"
+            class="search-results"
+            role="list"
+            aria-label="Search results"
+            hidden
+        ></div>
+    </div>
+
+    <a href="index.html" class="back-button" id="back-button">← Back to list</a>
+
+    <section
+        id="game-header"
+        class="game-summary-card"
+        aria-label="Game information"
+        aria-live="polite"
+    >
+        <div id="game-title">Loading...</div>
+        <div id="game-year"></div>
+    </section>
+
+    <section id="android-ports-section" aria-labelledby="ports-heading">
+        <h2 id="ports-heading" class="ports-section-title">Android Ports</h2>
+        <p class="ports-section-description">
+            Community-made Android ports and projects for this game.
+        </p>
+
+        <div id="status" aria-live="polite">Loading ports...</div>
+        <div id="port-list"></div>
+    </section>
+</main>
+
+<footer>
+    <p>NAPL — Native Android Port List</p>
+</footer>
+
+<script type="module" src="js/pages/game.js"></script>
+<script defer src="https://static.cloudflareinsights.com/beacon.min.js" data-cf-beacon='{"token":"7aa60a7d4725497699189f26ae707758"}'></script>
+
+</body>
+</html>

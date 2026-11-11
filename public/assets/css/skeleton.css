@@ -1,0 +1,129 @@
+/* =========================================================
+   NAPL — SKELETON LOADING PLACEHOLDERS
+   Shimmer keyframe animation & standard skeleton UI blocks
+   ========================================================= */
+
+@keyframes skeleton-shimmer {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
+}
+
+/* Base Shimmering Block */
+.skeleton {
+  position: relative;
+  display: block;
+  overflow: hidden;
+  border-radius: var(--radius-sm);
+  background-color: var(--surface-2);
+  background-image: linear-gradient(
+    90deg,
+    var(--surface-2) 0%,
+    var(--surface-3) 50%,
+    var(--surface-2) 100%
+  );
+  background-size: 200% 100%;
+  background-repeat: no-repeat;
+  animation: skeleton-shimmer 1.5s ease-in-out infinite;
+  pointer-events: none;
+  user-select: none;
+}
+
+/* Text & Inline Blocks */
+.skeleton-text {
+  height: 14px;
+  width: 100%;
+}
+
+.skeleton-title {
+  height: 18px;
+  width: 72%;
+  border-radius: var(--radius-sm);
+}
+
+.skeleton-subtitle {
+  height: 13px;
+  width: 48%;
+}
+
+.skeleton-meta {
+  height: 11px;
+  width: 56%;
+}
+
+.skeleton-badge {
+  height: 18px;
+  width: 54px;
+  border-radius: var(--radius-sm);
+}
+
+/* Width Modifiers */
+.skeleton-w-sm {
+  width: 35%;
+}
+
+.skeleton-w-md {
+  width: 60%;
+}
+
+.skeleton-w-lg {
+  width: 85%;
+}
+
+.skeleton-w-full {
+  width: 100%;
+}
+
+/* Game List Card Placeholder (matches .home-game layout) */
+.skeleton-card {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 10px 14px 10px 10px;
+  background: var(--surface-1);
+  border: 1px solid var(--border-subtle);
+  border-left: 3px solid var(--border-medium);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-card);
+  pointer-events: none;
+  user-select: none;
+}
+
+.skeleton-cover {
+  flex: 0 0 64px;
+  width: 64px;
+  height: 88px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-subtle);
+}
+
+.skeleton-content {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/* Multi-Game App Card Placeholder */
+.skeleton-app-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 16px;
+  background: var(--surface-1);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  pointer-events: none;
+  user-select: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .skeleton {
+    animation: none;
+    background-image: none;
+  }
+}

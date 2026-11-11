@@ -1,0 +1,186 @@
+/* =========================================================
+   NAPL — HOME & CATEGORIES PAGE STYLES
+   ========================================================= */
+
+.home-tabs {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0;
+  margin-bottom: 24px;
+  border-bottom: 1px solid var(--border-medium);
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+.home-tab {
+  position: relative;
+  min-height: 44px;
+  padding: 10px 20px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  flex-shrink: 0;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  transition:
+    color var(--duration-fast) var(--ease-out),
+    border-color var(--duration-fast) var(--ease-out),
+    background-color var(--duration-fast) var(--ease-out);
+}
+
+.home-tab:hover {
+  color: var(--text-strong);
+  background: var(--surface-1);
+}
+
+.home-tab.active {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+  background: var(--surface-2);
+}
+
+.home-section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 18px;
+}
+
+.popular-tabs {
+  display: inline-flex;
+  align-items: center;
+  background: var(--surface-1);
+  border: 1px solid var(--border-medium);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+
+.popular-tab {
+  min-height: 36px;
+  padding: 6px 14px;
+  border-right: 1px solid var(--border-subtle);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  flex-shrink: 0;
+  transition:
+    background-color var(--duration-fast) var(--ease-out),
+    color var(--duration-fast) var(--ease-out);
+}
+
+.popular-tab:last-child {
+  border-right: 0;
+}
+
+.popular-tab:hover {
+  color: var(--text-strong);
+  background: var(--surface-2);
+}
+
+.popular-tab.active {
+  background: var(--cta-bg);
+  color: var(--text-strong);
+}
+
+/* Category Controls */
+.category-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 20px;
+}
+
+.category-controls #category-search {
+  flex: 1 1 280px;
+}
+
+.category-sort {
+  display: inline-flex;
+  align-items: center;
+  background: var(--surface-1);
+  border: 1px solid var(--border-medium);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+
+.category-sort-option,
+.category-sort-direction {
+  min-height: 40px;
+  padding: 6px 14px;
+  border-right: 1px solid var(--border-subtle);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  flex-shrink: 0;
+  transition:
+    background-color var(--duration-fast) var(--ease-out),
+    color var(--duration-fast) var(--ease-out);
+}
+
+.category-sort-direction {
+  border-right: 0;
+}
+
+.category-sort-option:hover,
+.category-sort-direction:hover {
+  color: var(--text-strong);
+  background: var(--surface-2);
+}
+
+.category-sort-option.active {
+  background: var(--cta-bg);
+  color: var(--text-strong);
+}
+
+/* Grids */
+.home-game-list,
+#game-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(330px, 1fr));
+  gap: 12px;
+}
+
+.home-view-more {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
+  margin-top: 20px;
+  padding: 10px 20px;
+  background: var(--surface-1);
+  border: 1px solid var(--border-medium);
+  border-radius: var(--radius-sm);
+  font-family: var(--font-display);
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--accent);
+  transition:
+    background-color var(--duration-fast) var(--ease-out),
+    border-color var(--duration-fast) var(--ease-out);
+}
+
+.home-view-more:hover {
+  background: var(--surface-2);
+  border-color: var(--border-strong);
+}
+
+@media (max-width: 720px) {
+  .home-game-list,
+  #game-list {
+    grid-template-columns: 1fr;
+  }
+}
