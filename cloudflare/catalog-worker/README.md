@@ -27,7 +27,7 @@ node scripts/migrate-from-sheet.mjs ./Community-Ports.csv
 npx wrangler d1 execute napl-db --remote --file=./seed.sql
 ```
 
-El SQL generado utiliza operaciones upsert y no ejecuta eliminaciones masivas. Si se vuelve a ejecutar, actualiza los registros coincidentes en lugar de vaciar la base.
+El SQL generado utiliza operaciones upsert y no ejecuta eliminaciones masivas. Si se vuelve a ejecutar, actualiza los registros coincidentes en lugar de vaciar la base. D1 gestiona las transacciones automáticamente, por lo que los archivos no incluyen instrucciones manuales `BEGIN` ni `COMMIT`.
 
 Los valores originales se conservan en `games.genre` y `ports.developer`. También se rellenan las tablas normalizadas `categories`, `game_categories`, `developers` y `port_developers`.
 
