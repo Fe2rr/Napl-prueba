@@ -2,7 +2,14 @@ name = "napl-catalog-worker"
 main = "src/index.js"
 compatibility_date = "2025-01-01"
 
+# Main catalog: games, ports, platforms, developers, categories and visits.
 [[d1_databases]]
 binding = "DB"
-database_name = "napl-catalog-db"
-database_id = "REPLACE_WITH_YOUR_D1_DATABASE_ID"
+database_name = "napl-db"
+database_id = "2bf13a98-e87c-4ba9-9298-206b578af02b"
+
+# Device catalog and community compatibility reports.
+[[d1_databases]]
+binding = "DEVICES_DB"
+database_name = "napl-devices-db"
+database_id = "6a356f65-88d7-4b0b-99cb-63bf551d99b1"
