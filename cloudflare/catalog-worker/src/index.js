@@ -669,6 +669,96 @@ async function handleImportSheet(request, env) {
 }
 
 
+
+const GOOGLE_PLAY_DEVICES_URL = "https://cdn.jsdelivr.net/gh/bsthen/device-models/devices.json";
+
+// Android handhelds whose commercial names are not consistently present in Google Play's catalog.
+// The models are Android-origin devices; Armada's list is used only as a cross-check for model names.
+const ANDROID_HANDHELD_DEVICES = [
+    "AYN Thor", "AYN Thor Lite", "AYN Odin 2", "AYN Odin 2 Mini",
+    "AYN Odin 2 Portal", "AYN Odin 3", "AYN Odin 3 Portal",
+    "Retroid Pocket 5", "Retroid Pocket 6", "Retroid Pocket Mini",
+    "Retroid Pocket Mini V2", "Retroid Pocket Flip 2", "Retroid Pocket Duo",
+    "Retroid Pocket Nova",
+    "AYANEO Pocket EVO", "AYANEO Pocket S2", "AYANEO Pocket ACE",
+    "AYANEO Pocket DS", "AYANEO Pocket DMG", "AYANEO Pocket MICRO 2",
+    "AYANEO Pocket S 2K", "AYANEO Pocket S 1K",
+    "KONKR Pocket FIT (8 Elite)", "KONKR Pocket FIT (G3 Gen 3)",
+    "MANGMI AIR Y Pro (8 GB)", "MANGMI Pocket Max"
+];
+
+async function handleImportDevices(request, env) {
+    if (!env.IMPORT_SECRET) return jsonResponse({ success: false, error: "Import secret is not configured." }, 503);
+    const authorization = request.headers.get("Authorization") || "";
+    const supplied = authorization.startsWith("Bearer ") ? authorization.slice(7).trim() : "";
+    if (!supplied || supplied !== env.IMPORT_SECRET) return jsonResponse({ success: false, error: "Unauthorized." }, 401);
+
+    const response = await fetch(GOOGLE_PLAY_DEVICES_URL, {
+        headers: { "Accept": "application/json" },
+        cf: { cacheTtl: 0, cacheEverything: false }
+    });
+    if (!response.ok) return jsonResponse({ success: false, error: "Could not download Google Play device data.", upstreamStatus: response.status }, 502);
+
+    const source = await response.json();
+    if (!source || typeof source !== "object" || Array.isArray(source)) {
+        return jsonResponse({ success: false, error: "Google Play device data has an unexpected format." }, 502);
+    }
+
+    const devices = new Map();
+    for (const [idValue, item] of Object.entries(source)) {
+        const id = String(idValue || "").trim();
+        const brand = String(item?.brand || "").trim();
+        const model = String(item?.name || "").trim();
+        const name = [brand, model].filter(Boolean).join(" ").trim();
+        if (id && name) devices.set(id, name.slice(0, 180));
+    }
+
+    for (const name of ANDROID_HANDHELD_DEVICES) {
+        const id = "handheld:" + name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+        devices.set(id, name);
+    }
+
+    if (!devices.size) return jsonResponse({ success: false, error: "No valid Android devices found; database was not changed." }, 502);
+
+    const statements = Array.from(devices, ([id, name]) =>
+        env.DEVICES_DB.prepare(
+            "INSERT INTO devices (id, name) VALUES (?, ?) ON CONFLICT(id) DO UPDATE SET name = excluded.name"
+        ).bind(id, name)
+    );
+    for (let i = 0; i < statements.length; i += 50) {
+        await env.DEVICES_DB.batch(statements.slice(i, i + 50));
+    }
+
+    const counts = await env.DEVICES_DB.prepare("SELECT COUNT(*) AS total FROM devices").first();
+    return jsonResponse({
+        success: true,
+        message: "Android device catalog imported. Existing compatibility reports were preserved.",
+        imported: devices.size,
+        totalDevices: Number(counts?.total) || 0,
+        handhelds: ANDROID_HANDHELD_DEVICES.length
+    });
+}
+
+function handleImportDevicesPage() {
+    const html = `<!doctype html><html lang="es"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>NAPL — Importar dispositivos Android</title>
+<body style="font:16px system-ui;max-width:520px;margin:40px auto;padding:0 18px;background:#101810;color:#eef5ee">
+<h2>Importar dispositivos Android</h2>
+<p>Se añadirán dispositivos de Google Play y consolas Android portátiles. No se borrarán dispositivos ni reportes existentes.</p>
+<form id="f"><input id="secret" type="password" autocomplete="off" required placeholder="IMPORT_SECRET" style="box-sizing:border-box;width:100%;padding:12px;margin:8px 0;background:#202d20;color:white;border:1px solid #607060;border-radius:6px">
+<button style="padding:12px 18px">Importar dispositivos</button></form><pre id="result" style="white-space:pre-wrap;overflow-wrap:anywhere"></pre>
+<script>
+document.getElementById("f").addEventListener("submit", async function(e) {
+ e.preventDefault(); const secret=document.getElementById("secret").value; const out=document.getElementById("result");
+ out.textContent="Importando…";
+ try { const response=await fetch("/admin/import-devices",{method:"POST",headers:{Authorization:"Bearer "+secret}});
+ const data=await response.json(); out.textContent=JSON.stringify(data,null,2);
+ } catch(err) { out.textContent="Error de conexión: "+err.message; }
+});
+</script></body></html>`;
+    return new Response(html, { headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" } });
+}
+
 function handleImportPage() {
     const html = `<!doctype html>
 <html lang="es"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
@@ -706,7 +796,7 @@ export default {
         const path = url.pathname.replace(/\/+$/, "") || "/";
 
         try {
-            if (request.method === "GET" && path === "/admin/import") {
+            if (request.method === "GET" && path === "/admin/import-devices") {\n                return handleImportDevicesPage();\n            }\n\n            if (request.method === "POST" && path === "/admin/import-devices") {\n                return await handleImportDevices(request, env);\n            }\n\n            if (request.method === "GET" && path === "/admin/import") {
                 return handleImportPage();
             }
 
