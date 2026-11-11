@@ -706,7 +706,11 @@ export default {
         const path = url.pathname.replace(/\/+$/, "") || "/";
 
         try {
-            if (request.method === "GET" && path === "/admin/import") {\n                return handleImportPage();\n            }\n\n            if (request.method === "POST" && path === "/admin/import-sheet") {
+            if (request.method === "GET" && path === "/admin/import") {
+                return handleImportPage();
+            }
+
+            if (request.method === "POST" && path === "/admin/import-sheet") {
                 return await handleImportSheet(request, env);
             }
 
