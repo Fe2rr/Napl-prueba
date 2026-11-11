@@ -2,9 +2,6 @@
  * NAPL — CORE CONFIGURATION
  */
 
-export const POPULAR_URL =
-    "https://script.google.com/macros/s/AKfycbxio6DGpBJRkYdceeFVXk3gSOFcBe5KZJtHU8F2j66DDYx_G_az01p7rnsuCq0KPHY/exec";
-
 export const CATALOG_API_BASE = "https://napl-catalog-worker.federicoxastro.workers.dev";
 
 export const RATINGS_API_BASE =
@@ -23,12 +20,7 @@ export const REPORT_LINK_API_URL = CATALOG_API_BASE
     ? `${CATALOG_API_BASE}/report-link`
     : "/api/report-link";
 
-export const VISIT_API_URL = CATALOG_API_BASE
-    ? `${CATALOG_API_BASE}/visit`
-    : typeof window !== "undefined" &&
-      window.location.hostname.endsWith("github.io")
-    ? POPULAR_URL
-    : "/api/visit";
+export const VISIT_API_URL = `${CATALOG_API_BASE}/visit`;
 
 export const RATING_TOKEN_STORAGE_KEY = "napl_rating_token_v1";
 export const USER_DEVICE_STORAGE_KEY = "napl_user_device_v1";
