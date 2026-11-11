@@ -384,12 +384,16 @@ async function handleRecordVisit(request, url, env) {
 }
 
 async function handleReportLink(request, env) {
+    if (!env.DISCORD_WEBHOOK_URL) {
+        return jsonResponse({ success: false, error: "Discord webhook is not configured." }, 503);
+    }
+
     const body = await request.json().catch(() => null);
     if (!body || typeof body !== "object") {
         return jsonResponse({ success: false, error: "Invalid JSON body." }, 400);
     }
 
-    const portId = String(body.port_id || "").trim();
+    const portId = String(body.port_id || "").trim().slice(0, 120);
     const token = String(body.token || "").trim();
     const reason = String(body.reason || "").trim().slice(0, 120);
     const reportUrl = String(body.url || "").trim().slice(0, 500);
@@ -409,6 +413,38 @@ async function handleReportLink(request, env) {
         .map((b) => b.toString(16).padStart(2, "0"))
         .join("");
 
+    const payload = {
+        embeds: [
+            {
+                title: "NAPL — Broken Link Report",
+                color: 15158332,
+                fields: [
+                    { name: "Port ID", value: portId, inline: true },
+                    { name: "Reason", value: reason, inline: true },
+                    { name: "URL", value: reportUrl || "N/A", inline: false },
+                ],
+                timestamp: new Date().toISOString(),
+            },
+        ],
+    };
+
+    let discordResponse;
+    try {
+        discordResponse = await fetch(env.DISCORD_WEBHOOK_URL, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload),
+        });
+    } catch (error) {
+        console.error("Discord webhook network error:", error);
+        return jsonResponse({ success: false, error: "Could not reach Discord. Please try again." }, 502);
+    }
+
+    if (!discordResponse.ok) {
+        console.error("Discord webhook returned HTTP", discordResponse.status);
+        return jsonResponse({ success: false, error: "Discord rejected the report.", discordStatus: discordResponse.status }, 502);
+    }
+
     await env.DB.prepare(
         `INSERT INTO link_reports (port_id, token_hash, reason, url, updated_at)
          VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
@@ -417,29 +453,6 @@ async function handleReportLink(request, env) {
     )
         .bind(portId, tokenHash, reason, reportUrl)
         .run();
-
-    if (env.DISCORD_WEBHOOK_URL) {
-        const payload = {
-            embeds: [
-                {
-                    title: "NAPL — Broken Link Report",
-                    color: 15158332,
-                    fields: [
-                        { name: "Port ID", value: portId, inline: true },
-                        { name: "Reason", value: reason, inline: true },
-                        { name: "URL", value: reportUrl || "N/A", inline: false },
-                    ],
-                    timestamp: new Date().toISOString(),
-                },
-            ],
-        };
-
-        fetch(env.DISCORD_WEBHOOK_URL, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(payload),
-        }).catch((err) => console.error("Discord webhook error:", err));
-    }
 
     return jsonResponse({ success: true, portId, reason });
 }
