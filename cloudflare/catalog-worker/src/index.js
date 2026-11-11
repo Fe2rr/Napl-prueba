@@ -292,10 +292,20 @@ async function handleGetPopular(url, env) {
     let rows;
     if (period === "alltime") {
         rows = await env.DB.prepare(
-            `SELECT game_slug AS slug, COALESCE(NULLIF(game_name, ''), game_slug) AS game, visits
-             FROM game_visit_totals
-             WHERE visits > 0
-             ORDER BY visits DESC, game_slug ASC
+            `SELECT t.game_slug AS slug,
+                    COALESCE(NULLIF(t.game_name, ''), g.name, t.game_slug) AS game,
+                    t.visits + COALESCE(l.visits, 0) AS visits
+             FROM game_visit_totals t
+             LEFT JOIN game_visit_legacy_totals l ON l.game_slug = t.game_slug
+             LEFT JOIN games g ON g.slug = t.game_slug
+             WHERE t.visits + COALESCE(l.visits, 0) > 0
+             UNION ALL
+             SELECT l.game_slug AS slug, COALESCE(g.name, l.game_name, l.game_slug) AS game, l.visits
+             FROM game_visit_legacy_totals l
+             LEFT JOIN games g ON g.slug = l.game_slug
+             WHERE l.visits > 0
+               AND NOT EXISTS (SELECT 1 FROM game_visit_totals t WHERE t.game_slug = l.game_slug)
+             ORDER BY visits DESC, slug ASC
              LIMIT 100`
         ).all();
     } else {
@@ -669,6 +679,72 @@ async function handleImportSheet(request, env) {
 }
 
 
+async function handleImportVisits(request, env) {
+    if (!env.IMPORT_SECRET) return jsonResponse({ success: false, error: "Import secret is not configured." }, 503);
+    const authorization = request.headers.get("Authorization") || "";
+    const supplied = authorization.startsWith("Bearer ") ? authorization.slice(7).trim() : "";
+    if (!supplied || supplied !== env.IMPORT_SECRET) return jsonResponse({ success: false, error: "Unauthorized." }, 401);
+
+    const response = await fetch(SHEET_CSV_URL, {
+        headers: { "Accept": "text/csv,text/plain;q=0.9,*/*;q=0.8" },
+        cf: { cacheTtl: 0, cacheEverything: false }
+    });
+    if (!response.ok) return jsonResponse({ success: false, error: "Could not download the published Google Sheets CSV.", upstreamStatus: response.status }, 502);
+    const csv = await response.text();
+    const rows = importParseCSV(csv);
+    if (!rows.length || !Object.prototype.hasOwnProperty.call(rows[0], "GAME") ||
+        !Object.prototype.hasOwnProperty.call(rows[0], "VISITAS")) {
+        return jsonResponse({ success: false, error: "CSV must contain GAME and VISITAS columns." }, 422);
+    }
+
+    const totals = new Map();
+    for (const row of rows) {
+        const gameName = importColumn(row, ["GAME", "GAME NAME", "NAME", "JUEGO"]);
+        if (!gameName) continue;
+        const slug = importSlug(gameName);
+        const rawVisits = importColumn(row, ["VISITAS"]);
+        const visits = Number.parseInt(rawVisits.replace(/[^0-9-]/g, ""), 10);
+        if (!slug || !Number.isSafeInteger(visits) || visits < 0) continue;
+        totals.set(slug, { slug, gameName, visits });
+    }
+
+    await env.DB.prepare(`CREATE TABLE IF NOT EXISTS game_visit_legacy_totals (
+        game_slug TEXT PRIMARY KEY,
+        game_name TEXT NOT NULL DEFAULT '',
+        visits INTEGER NOT NULL DEFAULT 0,
+        imported_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )`).run();
+
+    const statements = Array.from(totals.values()).map((item) =>
+        env.DB.prepare(`INSERT INTO game_visit_legacy_totals (game_slug, game_name, visits)
+            VALUES (?, ?, ?)
+            ON CONFLICT(game_slug) DO UPDATE SET
+                game_name = excluded.game_name,
+                visits = excluded.visits,
+                imported_at = CURRENT_TIMESTAMP`)
+            .bind(item.slug, item.gameName, item.visits)
+    );
+    await importBatch(env.DB, statements);
+
+    return jsonResponse({
+        success: true,
+        message: "Legacy visit totals imported. Re-running is safe; existing legacy values are replaced, not added.",
+        importedGames: totals.size,
+        totalLegacyVisits: Array.from(totals.values()).reduce((sum, item) => sum + item.visits, 0)
+    });
+}
+
+function handleImportVisitsPage() {
+    const html = `<!doctype html><html lang="es"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>NAPL — Recuperar visitas</title><body style="font:16px system-ui;max-width:520px;margin:40px auto;padding:0 18px;background:#101810;color:#eef5ee">
+<h2>Recuperar visitas históricas</h2><p>Importa los valores de la columna VISITAS del Google Sheet a la tabla histórica de Cloudflare. No modifica las visitas nuevas ni crea fechas ficticias.</p>
+<form id="f"><input id="secret" type="password" autocomplete="off" required placeholder="IMPORT_SECRET" style="box-sizing:border-box;width:100%;padding:12px;margin:8px 0;background:#202d20;color:white;border:1px solid #607060;border-radius:6px">
+<button style="padding:12px 18px">Importar VISITAS</button></form><pre id="result" style="white-space:pre-wrap;overflow-wrap:anywhere"></pre>
+<script>document.getElementById("f").addEventListener("submit",async e=>{e.preventDefault();const out=document.getElementById("result");out.textContent="Importando…";try{const r=await fetch("/admin/import-visits",{method:"POST",headers:{Authorization:"Bearer "+document.getElementById("secret").value}});out.textContent=JSON.stringify(await r.json(),null,2)}catch(err){out.textContent="Error: "+err.message}});</script></body></html>`;
+    return new Response(html, { headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" } });
+}
+
+
 
 const GOOGLE_PLAY_DEVICES_URL = "https://cdn.jsdelivr.net/gh/bsthen/device-models/devices.json";
 
@@ -822,6 +898,14 @@ export default {
 
             if (request.method === "GET" && path === "/admin/import") {
                 return handleImportPage();
+            }
+
+            if (request.method === "GET" && path === "/admin/import-visits") {
+                return handleImportVisitsPage();
+            }
+
+            if (request.method === "POST" && path === "/admin/import-visits") {
+                return await handleImportVisits(request, env);
             }
 
             if (request.method === "POST" && path === "/admin/import-sheet") {
