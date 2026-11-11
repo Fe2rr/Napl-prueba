@@ -38,7 +38,8 @@ CREATE TABLE IF NOT EXISTS ports (
     works TEXT NOT NULL DEFAULT '',
     controller_support TEXT NOT NULL DEFAULT '',
     sort_order INTEGER NOT NULL DEFAULT 0,
-    FOREIGN KEY (game_slug) REFERENCES games(slug) ON DELETE CASCADE
+    FOREIGN KEY (game_slug) REFERENCES games(slug) ON DELETE CASCADE,
+    UNIQUE (game_slug, port_id)
 );
 
 CREATE INDEX IF NOT EXISTS idx_ports_game_slug ON ports(game_slug);
@@ -46,26 +47,33 @@ CREATE INDEX IF NOT EXISTS idx_ports_port_id ON ports(port_id);
 CREATE INDEX IF NOT EXISTS idx_ports_platform ON ports(platform);
 CREATE INDEX IF NOT EXISTS idx_ports_project ON ports(project);
 
--- Official Android devices catalog (from jaredrummler/AndroidDeviceNames)
-CREATE TABLE IF NOT EXISTS devices (
-    id TEXT PRIMARY KEY,
-    name TEXT NOT NULL
-);
-
-CREATE INDEX IF NOT EXISTS idx_devices_name ON devices(name);
-
--- Community compatibility reports (Works Yes/No + validated device_id)
-CREATE TABLE IF NOT EXISTS compatibility_reports (
+-- Normalized developer directory. ports.developer remains as a display/cache field.
+CREATE TABLE IF NOT EXISTS developers (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    port_id TEXT NOT NULL,
-    token_hash TEXT NOT NULL,
-    device_id TEXT NOT NULL REFERENCES devices(id),
-    works INTEGER NOT NULL CHECK (works IN (0, 1)),
-    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    UNIQUE(port_id, token_hash, device_id)
+    name TEXT NOT NULL UNIQUE,
+    slug TEXT NOT NULL UNIQUE
 );
 
-CREATE INDEX IF NOT EXISTS idx_compat_port_id ON compatibility_reports(port_id);
+CREATE TABLE IF NOT EXISTS port_developers (
+    game_slug TEXT NOT NULL,
+    port_id TEXT NOT NULL,
+    developer_id INTEGER NOT NULL REFERENCES developers(id) ON DELETE CASCADE,
+    PRIMARY KEY (game_slug, port_id, developer_id),
+    FOREIGN KEY (game_slug, port_id) REFERENCES ports(game_slug, port_id) ON DELETE CASCADE
+);
+
+-- Normalized categories. Each imported game genre is initially preserved as one category.
+CREATE TABLE IF NOT EXISTS categories (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL UNIQUE,
+    slug TEXT NOT NULL UNIQUE
+);
+
+CREATE TABLE IF NOT EXISTS game_categories (
+    game_slug TEXT NOT NULL REFERENCES games(slug) ON DELETE CASCADE,
+    category_id INTEGER NOT NULL REFERENCES categories(id) ON DELETE CASCADE,
+    PRIMARY KEY (game_slug, category_id)
+);
 
 -- Game popularity & visits (replaces Google Apps Script)
 CREATE TABLE IF NOT EXISTS game_visit_totals (
