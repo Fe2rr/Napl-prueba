@@ -163,6 +163,18 @@ async function handleGetGame(slug, env) {
     );
 }
 
+async function handleGetDevices(env) {
+    const result = await env.DEVICES_DB.prepare(
+        "SELECT id, name FROM devices ORDER BY name COLLATE NOCASE ASC"
+    ).all();
+
+    return jsonResponse(
+        { success: true, devices: result.results || [] },
+        200,
+        { "Cache-Control": "public, max-age=3600, s-maxage=86400" }
+    );
+}
+
 async function handleGetCompatibility(url, env) {
     const portIdsParam = url.searchParams.get("port_ids") || "";
     const portIds = portIdsParam
@@ -176,7 +188,7 @@ async function handleGetCompatibility(url, env) {
     }
 
     const placeholders = portIds.map(() => "?").join(",");
-    const rows = await env.DB.prepare(
+    const rows = await env.DEVICES_DB.prepare(
         `SELECT r.port_id, r.works, r.updated_at, d.id AS device_id, d.name AS device_name
          FROM compatibility_reports r
          JOIN devices d ON d.id = r.device_id
@@ -230,7 +242,7 @@ async function handlePostCompatibility(request, env) {
     }
 
     // Strict validation: device_id must exist in the official devices table
-    const device = await env.DB.prepare(
+    const device = await env.DEVICES_DB.prepare(
         "SELECT id, name FROM devices WHERE id = ?"
     )
         .bind(deviceId)
@@ -252,7 +264,7 @@ async function handlePostCompatibility(request, env) {
         .map((b) => b.toString(16).padStart(2, "0"))
         .join("");
 
-    await env.DB.prepare(
+    await env.DEVICES_DB.prepare(
         `INSERT INTO compatibility_reports (port_id, token_hash, device_id, works, updated_at)
          VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
          ON CONFLICT(port_id, token_hash, device_id)
@@ -423,14 +435,22 @@ async function handleReportLink(request, env) {
 }
 
 async function handleHealth(env) {
-    const count = await env.DB.prepare(
-        "SELECT (SELECT COUNT(*) FROM games) AS games, (SELECT COUNT(*) FROM ports) AS ports"
-    ).first();
+    const [catalogCounts, deviceCounts] = await Promise.all([
+        env.DB.prepare(
+            "SELECT (SELECT COUNT(*) FROM games) AS games, (SELECT COUNT(*) FROM ports) AS ports, (SELECT COUNT(*) FROM developers) AS developers, (SELECT COUNT(*) FROM categories) AS categories"
+        ).first(),
+        env.DEVICES_DB.prepare(
+            "SELECT (SELECT COUNT(*) FROM devices) AS devices, (SELECT COUNT(*) FROM compatibility_reports) AS compatibility_reports"
+        ).first(),
+    ]);
 
     return jsonResponse({
         success: true,
         status: "ok",
-        counts: count || { games: 0, ports: 0 },
+        counts: {
+            ...(catalogCounts || { games: 0, ports: 0, developers: 0, categories: 0 }),
+            ...(deviceCounts || { devices: 0, compatibility_reports: 0 }),
+        },
     });
 }
 
@@ -455,6 +475,10 @@ export default {
             if (request.method === "GET" && path.startsWith("/games/")) {
                 const slug = path.slice("/games/".length);
                 return await handleGetGame(slug, env);
+            }
+
+            if (request.method === "GET" && path === "/devices") {
+                return await handleGetDevices(env);
             }
 
             if (request.method === "GET" && path === "/popular") {
