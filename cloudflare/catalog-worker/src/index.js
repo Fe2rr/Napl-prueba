@@ -796,7 +796,15 @@ export default {
         const path = url.pathname.replace(/\/+$/, "") || "/";
 
         try {
-            if (request.method === "GET" && path === "/admin/import-devices") {\n                return handleImportDevicesPage();\n            }\n\n            if (request.method === "POST" && path === "/admin/import-devices") {\n                return await handleImportDevices(request, env);\n            }\n\n            if (request.method === "GET" && path === "/admin/import") {
+            if (request.method === "GET" && path === "/admin/import-devices") {
+                return handleImportDevicesPage();
+            }
+
+            if (request.method === "POST" && path === "/admin/import-devices") {
+                return await handleImportDevices(request, env);
+            }
+
+            if (request.method === "GET" && path === "/admin/import") {
                 return handleImportPage();
             }
 
