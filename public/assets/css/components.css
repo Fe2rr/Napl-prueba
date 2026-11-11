@@ -73,15 +73,14 @@
   color: var(--accent);
 }
 
-/* Game Card */
+/* Game Card — Detailed List */
 .home-game {
   display: flex;
   align-items: center;
   gap: 14px;
-  padding: 10px 14px 10px 10px;
+  padding: 12px 14px;
   background: var(--surface-1);
   border: 1px solid var(--border-subtle);
-  border-left: 3px solid var(--cta-bg);
   border-radius: var(--radius-md);
   color: var(--text-main);
   box-shadow: var(--shadow-card);
@@ -93,10 +92,9 @@
 }
 
 .home-game:hover {
-  transform: translateX(2px);
+  transform: translateY(-1px);
   background: var(--surface-2);
-  border-color: var(--border-medium);
-  border-left-color: var(--accent);
+  border-color: var(--border-strong);
   box-shadow: var(--shadow-card-hover);
 }
 

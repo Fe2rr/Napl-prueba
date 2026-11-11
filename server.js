@@ -186,9 +186,68 @@ app.post('/api/report-link', (req, res) => {
   return res.json({ success: true, portId, reason });
 });
 
+// Sheet proxy endpoint for preview mode (avoids browser iframe CORS / redirect blocks)
+let sheetCache = null;
+let sheetCacheTime = 0;
+const SPREADSHEET_CSV_URL =
+  'https://docs.google.com/spreadsheets/d/1CO7dH7mbj9sl67g4e94wczHESp0NAsOa7_chKKii9OA/export?format=csv';
+
+app.get('/api/sheet', async (req, res) => {
+  try {
+    const now = Date.now();
+    if (sheetCache && now - sheetCacheTime < 120000) {
+      res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+      return res.send(sheetCache);
+    }
+    const upstream = await fetch(SPREADSHEET_CSV_URL);
+    if (!upstream.ok) {
+      throw new Error(`Google Sheets HTTP ${upstream.status}`);
+    }
+    const csv = await upstream.text();
+    sheetCache = csv;
+    sheetCacheTime = now;
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    return res.send(csv);
+  } catch (error) {
+    console.error('Sheet proxy error:', error);
+    if (sheetCache) {
+      res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+      return res.send(sheetCache);
+    }
+    return res.status(502).json({ error: 'Could not fetch Google Sheet catalog.' });
+  }
+});
+
 // Visit tracking proxy for preview mode
 const POPULAR_URL =
   'https://script.google.com/macros/s/AKfycbxio6DGpBJRkYdceeFVXk3gSOFcBe5KZJtHU8F2j66DDYx_G_az01p7rnsuCq0KPHY/exec';
+
+const popularCache = new Map();
+
+app.get('/api/popular', async (req, res) => {
+  const period = String(req.query.popular || 'week').trim();
+  const cached = popularCache.get(period);
+  const now = Date.now();
+
+  if (cached && now - cached.time < 60000) {
+    return res.json(cached.data);
+  }
+
+  try {
+    const url = new URL(POPULAR_URL);
+    url.searchParams.set('popular', period);
+    const upstream = await fetch(url.toString());
+    const data = await upstream.json();
+    popularCache.set(period, { time: now, data });
+    return res.json(data);
+  } catch (error) {
+    console.error('Popular proxy error:', error);
+    if (cached) {
+      return res.json(cached.data);
+    }
+    return res.status(502).json({ success: false, error: 'Could not fetch popular games.' });
+  }
+});
 
 app.post('/api/visit', async (req, res) => {
   const slug = String(req.body?.slug || '').trim();

@@ -35,7 +35,6 @@
   margin-bottom: 32px;
   background: var(--surface-1);
   border: 1px solid var(--border-medium);
-  border-top: 3px solid var(--accent);
   border-radius: var(--radius-md);
   box-shadow: var(--shadow-card);
 }
@@ -134,8 +133,8 @@
 .port-card {
   display: flex;
   flex-direction: column;
-  gap: 16px;
-  padding: 20px;
+  gap: 10px;
+  padding: 14px 16px;
   background: var(--surface-1);
   border: 1px solid var(--border-medium);
   border-radius: var(--radius-md);
@@ -145,9 +144,9 @@
 .port-top {
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  margin: -20px -20px 0;
-  padding: 16px 20px 14px;
+  gap: 6px;
+  margin: -14px -16px 0;
+  padding: 12px 16px 10px;
   background: var(--surface-2);
   border-bottom: 1px solid var(--border-medium);
   border-radius: var(--radius-md) var(--radius-md) 0 0;
@@ -156,7 +155,7 @@
 .port-title {
   margin: 0;
   font-family: var(--font-display);
-  font-size: 18px;
+  font-size: 17px;
   font-weight: 700;
   letter-spacing: -0.01em;
   color: var(--text-strong);
@@ -165,16 +164,14 @@
 .port-details {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 12px 16px;
+  gap: 8px 12px;
 }
 
 .port-detail {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 1px;
   min-width: 0;
-  padding-left: 10px;
-  border-left: 2px solid var(--border-subtle);
 }
 
 .port-detail-label {
@@ -184,11 +181,13 @@
   letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--text-muted);
+  line-height: 1.2;
 }
 
 .port-detail-value {
-  font-size: 14px;
+  font-size: 13.5px;
   font-weight: 500;
+  line-height: 1.35;
   color: var(--text-strong);
   font-variant-numeric: tabular-nums;
   overflow-wrap: anywhere;
@@ -201,13 +200,13 @@ a.port-detail-value {
 }
 
 .port-notes {
-  padding-top: 12px;
+  padding-top: 8px;
   border-top: 1px solid var(--border-subtle);
 }
 
 .port-notes-label {
-  margin-bottom: 4px;
-  font-size: 11px;
+  margin-bottom: 2px;
+  font-size: 10px;
   font-weight: 700;
   letter-spacing: 0.06em;
   color: var(--text-muted);
@@ -215,9 +214,9 @@ a.port-detail-value {
 
 .port-notes-text {
   margin: 0;
-  font-size: 14px;
+  font-size: 13.5px;
   color: var(--text-main);
-  line-height: 1.55;
+  line-height: 1.45;
   white-space: pre-line;
 }
 
@@ -258,13 +257,13 @@ a.port-detail-value {
 .port-report-link-button {
   min-height: 44px;
   padding: 0 12px;
-  border: 1px solid var(--border-medium);
-  background: var(--surface-2);
-  color: var(--text-secondary);
+  border: 1px solid rgba(245, 196, 81, 0.5);
+  background: rgba(245, 196, 81, 0.16);
+  color: var(--gold);
   border-radius: var(--radius-sm);
   font-family: var(--font-mono);
   font-size: 11px;
-  font-weight: 600;
+  font-weight: 700;
   white-space: nowrap;
   cursor: pointer;
   transition:
@@ -274,9 +273,9 @@ a.port-detail-value {
 }
 
 .port-report-link-button:hover {
-  background: var(--surface-3);
-  border-color: var(--error-border);
-  color: var(--error-text);
+  background: rgba(245, 196, 81, 0.28);
+  border-color: var(--gold);
+  color: #fde68a;
 }
 
 .port-report-link-popover {
@@ -367,9 +366,9 @@ a.port-detail-value {
 }
 
 .port-rating-button {
-  border: 1px solid var(--border-medium);
-  background: var(--surface-2);
-  color: var(--text-strong);
+  border: 1px solid #4ade80;
+  background: #16a34a;
+  color: #ffffff;
   border-radius: 7px;
   padding: 6px 12px;
   font-size: 12px;
@@ -377,12 +376,14 @@ a.port-detail-value {
   cursor: pointer;
   transition:
     background-color var(--duration-fast) var(--ease-out),
-    border-color var(--duration-fast) var(--ease-out);
+    border-color var(--duration-fast) var(--ease-out),
+    color var(--duration-fast) var(--ease-out);
 }
 
 .port-rating-button:hover {
-  background: var(--surface-3);
-  border-color: var(--border-strong);
+  background: #22c55e;
+  border-color: #86efac;
+  color: #052e16;
 }
 
 .port-rating-popover {
@@ -487,7 +488,7 @@ a.port-detail-value {
 
 /* Port Device Compatibility (Works? Yes/No + Strict Phone Model) */
 .port-compat {
-  padding-top: 12px;
+  padding-top: 8px;
   border-top: 1px solid var(--border-subtle);
 }
 
@@ -539,17 +540,21 @@ a.port-detail-value {
   border: 1px solid var(--border-subtle);
 }
 
+.port-compat-meter.is-empty {
+  opacity: 0.72;
+}
+
 .port-compat-meter-yes {
   height: 100%;
-  width: 0%;
+  width: 50%;
   background: var(--accent);
   transition: width 320ms var(--ease-out);
 }
 
 .port-compat-meter-no {
   height: 100%;
-  width: 0%;
-  background: var(--error-text);
+  width: 50%;
+  background: #f87171;
   transition: width 320ms var(--ease-out);
 }
 
@@ -559,11 +564,10 @@ a.port-detail-value {
   gap: 6px;
 }
 
-.port-compat-toggle,
-.port-compat-button {
+.port-compat-toggle {
   border: 1px solid var(--border-medium);
-  background: var(--surface-2);
-  color: var(--text-strong);
+  background: transparent;
+  color: var(--text-secondary);
   border-radius: 7px;
   padding: 5px 10px;
   font-size: 12px;
@@ -571,19 +575,35 @@ a.port-detail-value {
   cursor: pointer;
   transition:
     background-color var(--duration-fast) var(--ease-out),
-    border-color var(--duration-fast) var(--ease-out);
+    border-color var(--duration-fast) var(--ease-out),
+    color var(--duration-fast) var(--ease-out);
 }
 
-.port-compat-toggle {
-  color: var(--text-secondary);
-  background: transparent;
-}
-
-.port-compat-toggle:hover,
-.port-compat-button:hover {
+.port-compat-toggle:hover {
   background: var(--surface-3);
   border-color: var(--border-strong);
   color: var(--text-strong);
+}
+
+.port-compat-button {
+  border: 1px solid #4ade80;
+  background: #16a34a;
+  color: #ffffff;
+  border-radius: 7px;
+  padding: 5px 12px;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  transition:
+    background-color var(--duration-fast) var(--ease-out),
+    border-color var(--duration-fast) var(--ease-out),
+    color var(--duration-fast) var(--ease-out);
+}
+
+.port-compat-button:hover {
+  background: #22c55e;
+  border-color: #86efac;
+  color: #052e16;
 }
 
 .port-compat-trigger {

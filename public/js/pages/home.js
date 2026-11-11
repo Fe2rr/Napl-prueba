@@ -14,15 +14,15 @@ import { loadCatalog } from "../core/data.js";
 import { fetchPopularPeriod } from "../services/popularity.js";
 import { initNavigation } from "../components/navigation.js";
 import { initSearch } from "../components/search.js";
-import { initThemeToggle } from "../components/theme.js";
 import {
     createHomeGameCard,
     getRepresentativePort,
 } from "../components/game-card.js";
-import { renderErrorBox } from "../components/loading.js";
+import {
+    renderErrorBox,
+    renderListSkeletons,
+} from "../components/loading.js";
 import { createCategoryController } from "./categories.js";
-
-initThemeToggle();
 
 const state = {
     games: [],
@@ -179,7 +179,7 @@ function displayPopular(ranking) {
 
 async function loadPopular(period = state.selectedPopularPeriod) {
     if (!popularList) return;
-    popularList.innerHTML = `<div class="home-loading">Loading...</div>`;
+    renderListSkeletons(popularList, 6);
 
     try {
         const rawGames = await fetchPopularPeriod(period);
@@ -292,9 +292,13 @@ function applyInitialRouteFromUrl() {
 async function initHomePage() {
     if (!statusElement || !gameList) return;
 
-    statusElement.textContent = "Loading games...";
+    if (lastAddedList) renderListSkeletons(lastAddedList, 6);
+    if (lastUpdatedList) renderListSkeletons(lastUpdatedList, 6);
+    if (popularList) renderListSkeletons(popularList, 6);
+
+    statusElement.textContent = "";
     gameList.replaceChildren();
-    gameList.hidden = false;
+    gameList.hidden = true;
 
     try {
         const catalog = await loadCatalog();

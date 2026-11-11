@@ -9,19 +9,43 @@ const allTimePopular = new Map();
 let allTimePopularLoaded = false;
 let allTimePopularPromise = null;
 
-export async function fetchPopularPeriod(period = "week") {
+async function fetchFallbackPopular(period) {
+    const isGitHubPages =
+        typeof window !== "undefined" &&
+        window.location.hostname.endsWith("github.io");
+
+    if (isGitHubPages) {
+        return [];
+    }
+
     const response = await fetch(
-        `${CATALOG_API_BASE}/popular?period=${encodeURIComponent(period)}`,
-        { method: "GET", cache: "no-store" }
+        `/api/popular?popular=${encodeURIComponent(period)}`,
+        { method: "GET", cache: "default" }
     );
     if (!response.ok) {
-        throw new Error(`Popular API returned HTTP ${response.status}.`);
+        return [];
     }
     const data = await response.json();
-    if (!data?.success || !Array.isArray(data.games)) {
-        throw new Error(data?.error || "Could not load popular games.");
+    return data?.success && Array.isArray(data.games) ? data.games : [];
+}
+
+export async function fetchPopularPeriod(period = "week") {
+    try {
+        const response = await fetch(
+            `${CATALOG_API_BASE}/popular?period=${encodeURIComponent(period)}`,
+            { method: "GET", cache: "no-store" }
+        );
+        if (!response.ok) {
+            return await fetchFallbackPopular(period);
+        }
+        const data = await response.json();
+        if (!data?.success || !Array.isArray(data.games)) {
+            return await fetchFallbackPopular(period);
+        }
+        return data.games;
+    } catch {
+        return await fetchFallbackPopular(period);
     }
-    return data.games;
 }
 
 export async function ensureAllTimePopular() {
@@ -46,7 +70,7 @@ export async function ensureAllTimePopular() {
             return allTimePopular;
         })
         .catch((error) => {
-            console.error("Could not load All Time popularity:", error);
+            console.warn("Could not load All Time popularity:", error);
             return allTimePopular;
         })
         .finally(() => {

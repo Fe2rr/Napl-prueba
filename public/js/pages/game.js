@@ -15,10 +15,9 @@ import {
 } from "../services/compatibility.js";
 import { initNavigation } from "../components/navigation.js";
 import { initSearch } from "../components/search.js";
-import { initThemeToggle } from "../components/theme.js";
+import { renderGameDetailSkeletons } from "../components/loading.js";
 import { displayGame } from "./game-render.js";
 
-initThemeToggle();
 const searchController = initSearch();
 const navController = initNavigation({
     mode: "game",
@@ -38,6 +37,11 @@ async function loadSelectedGame() {
     const params = new URLSearchParams(window.location.search);
     const requestedSlug = params.get("game");
 
+    if (requestedSlug) {
+        status.textContent = "";
+        renderGameDetailSkeletons(gameHeader, portList, 2);
+    }
+
     try {
         const catalog = await loadCatalog();
         searchController.setGames(catalog.games);
@@ -49,9 +53,6 @@ async function loadSelectedGame() {
             portList.replaceChildren();
             return;
         }
-
-        status.textContent = "Loading ports...";
-        portList.replaceChildren();
 
         const targetSlug = createSlug(requestedSlug);
         const game = catalog.games.find((item) => item.slug === targetSlug);

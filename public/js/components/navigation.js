@@ -134,18 +134,6 @@ export function initNavigation(options = {}) {
 
         platformList.replaceChildren();
 
-        addMenuItem(
-            "Multi-Game Apps",
-            "index.html?category=multi-game-apps",
-            () => onSelectCategory?.("multi-game-apps")
-        );
-
-        addMenuItem(
-            "Dual Screen",
-            "index.html?category=dual-screen",
-            () => onSelectCategory?.("dual-screen")
-        );
-
         const platforms = getUniquePlatforms(platformOrder, loadedGames);
         const groupOrder = ["Nintendo", "PlayStation", "Xbox", "Others"];
         const grouped = new Map(groupOrder.map((group) => [group, []]));
@@ -240,7 +228,28 @@ export function initNavigation(options = {}) {
             onSelectAllGames?.();
             closeMenu();
         });
+    } else if (allGamesButton && mode === "game") {
+        allGamesButton.addEventListener("click", () => {
+            closeMenu();
+            window.location.href = "index.html?view=all-games";
+        });
     }
+
+    document.querySelectorAll("#side-menu [data-category]").forEach((button) => {
+        const category = button.dataset.category;
+        if (!category) return;
+
+        button.addEventListener("click", () => {
+            if (mode === "game") {
+                closeMenu();
+                window.location.href = `index.html?category=${encodeURIComponent(category)}`;
+            } else {
+                onActionResetSearch?.();
+                onSelectCategory?.(category);
+                closeMenu();
+            }
+        });
+    });
 
     return {
         renderPlatforms,

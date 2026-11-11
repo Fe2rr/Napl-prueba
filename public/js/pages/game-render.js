@@ -441,11 +441,11 @@ function createPortCompatibility(port, compatibility, compatibilityActions) {
         const total = yesCount + noCount;
 
         if (total === 0) {
-            summaryText.textContent = "No reports yet";
+            summaryText.textContent = "No votes yet";
             summaryText.classList.add("is-empty");
             meter.classList.add("is-empty");
-            meterYes.style.width = "0%";
-            meterNo.style.width = "0%";
+            meterYes.style.width = "50%";
+            meterNo.style.width = "50%";
             meter.setAttribute("aria-label", "No compatibility votes yet");
         } else {
             const yesPct = Math.round((yesCount / total) * 100);
@@ -504,7 +504,7 @@ function createPortCompatibility(port, compatibility, compatibilityActions) {
     const reportButton = document.createElement("button");
     reportButton.type = "button";
     reportButton.className = "port-compat-button";
-    reportButton.textContent = "Report";
+    reportButton.textContent = "Works?";
     reportButton.setAttribute("aria-expanded", "false");
 
     const popover = document.createElement("div");
@@ -905,12 +905,9 @@ function displayGameSummary(game, parentElement) {
         metadata.append(genre);
     }
 
-    const platform = document.createElement("span");
-    platform.className = "game-summary-genre";
-    platform.textContent = "Android";
-    metadata.append(platform);
-
-    info.appendChild(metadata);
+    if (metadata.children.length > 0) {
+        info.appendChild(metadata);
+    }
 
     if (game.description) {
         info.appendChild(createExpandableDescription(game.description));
