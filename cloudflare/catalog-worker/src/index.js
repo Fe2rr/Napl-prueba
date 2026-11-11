@@ -669,6 +669,33 @@ async function handleImportSheet(request, env) {
 }
 
 
+function handleImportPage() {
+    const html = `<!doctype html>
+<html lang="es"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>NAPL — Importar catálogo</title>
+<body style="font:16px system-ui;max-width:520px;margin:40px auto;padding:0 18px;background:#101810;color:#eef5ee">
+<h2>Importar catálogo NAPL</h2>
+<p>Ingresá el valor de IMPORT_SECRET. Se enviará únicamente en el encabezado de autorización; no se guarda en esta página.</p>
+<form id="f">
+<input id="secret" type="password" autocomplete="off" required placeholder="IMPORT_SECRET" style="box-sizing:border-box;width:100%;padding:12px;margin:8px 0;background:#202d20;color:white;border:1px solid #607060;border-radius:6px">
+<button style="padding:12px 18px">Ejecutar importación</button>
+</form><pre id="result" style="white-space:pre-wrap;overflow-wrap:anywhere"></pre>
+<script>
+document.getElementById("f").addEventListener("submit", async function(e) {
+ e.preventDefault();
+ const secret = document.getElementById("secret").value;
+ const out = document.getElementById("result");
+ out.textContent = "Importando…";
+ try {
+  const response = await fetch("/admin/import-sheet", {method:"POST",headers:{Authorization:"Bearer " + secret}});
+  const data = await response.json();
+  out.textContent = JSON.stringify(data, null, 2);
+ } catch (err) { out.textContent = "Error de conexión: " + err.message; }
+});
+</script></body></html>`;
+    return new Response(html, { headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" } });
+}
+
 export default {
     async fetch(request, env) {
         if (request.method === "OPTIONS") {
@@ -679,7 +706,7 @@ export default {
         const path = url.pathname.replace(/\/+$/, "") || "/";
 
         try {
-            if (request.method === "POST" && path === "/admin/import-sheet") {
+            if (request.method === "GET" && path === "/admin/import") {\n                return handleImportPage();\n            }\n\n            if (request.method === "POST" && path === "/admin/import-sheet") {
                 return await handleImportSheet(request, env);
             }
 
