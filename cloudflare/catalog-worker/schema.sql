@@ -1,7 +1,5 @@
 -- NAPL Catalog Database Schema (Separate from Ratings/Votes DB)
 
-PRAGMA foreign_keys = ON;
-
 CREATE TABLE IF NOT EXISTS platforms (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT NOT NULL UNIQUE,
