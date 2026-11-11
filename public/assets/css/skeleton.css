@@ -170,14 +170,15 @@
 
 @media (max-width: 720px) {
   .skeleton-summary-card {
-    flex-direction: column;
-    gap: 18px;
-    padding: 18px;
+    flex-direction: row;
+    align-items: flex-start;
+    gap: 16px;
+    padding: 16px;
   }
 
   .skeleton-summary-cover {
-    width: 128px;
-    flex-basis: auto;
+    flex: 0 0 96px;
+    width: 96px;
   }
 }
 

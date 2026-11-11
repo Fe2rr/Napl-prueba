@@ -866,6 +866,9 @@ function displayGameSummary(game, parentElement) {
     parentElement.replaceChildren();
     parentElement.className = "game-header game-summary-card";
 
+    const topRow = document.createElement("div");
+    topRow.className = "game-summary-top";
+
     const coverUrl = String(game.coverUrl || "").trim();
     if (/^https?:\/\/\S+$/i.test(coverUrl)) {
         const cover = document.createElement("img");
@@ -876,7 +879,7 @@ function displayGameSummary(game, parentElement) {
         cover.decoding = "async";
         cover.referrerPolicy = "no-referrer";
         cover.addEventListener("error", () => cover.remove(), { once: true });
-        parentElement.appendChild(cover);
+        topRow.appendChild(cover);
     }
 
     const info = document.createElement("div");
@@ -909,11 +912,12 @@ function displayGameSummary(game, parentElement) {
         info.appendChild(metadata);
     }
 
-    if (game.description) {
-        info.appendChild(createExpandableDescription(game.description));
-    }
+    topRow.appendChild(info);
+    parentElement.appendChild(topRow);
 
-    parentElement.appendChild(info);
+    if (game.description) {
+        parentElement.appendChild(createExpandableDescription(game.description));
+    }
 }
 
 function displayPortCard(

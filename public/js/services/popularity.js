@@ -18,15 +18,19 @@ async function fetchFallbackPopular(period) {
         return [];
     }
 
-    const response = await fetch(
-        `/api/popular?popular=${encodeURIComponent(period)}`,
-        { method: "GET", cache: "default" }
-    );
-    if (!response.ok) {
+    try {
+        const response = await fetch(
+            `/api/popular?popular=${encodeURIComponent(period)}`,
+            { method: "GET", cache: "default" }
+        );
+        if (!response.ok) {
+            return [];
+        }
+        const data = await response.json();
+        return data?.success && Array.isArray(data.games) ? data.games : [];
+    } catch {
         return [];
     }
-    const data = await response.json();
-    return data?.success && Array.isArray(data.games) ? data.games : [];
 }
 
 export async function fetchPopularPeriod(period = "week") {

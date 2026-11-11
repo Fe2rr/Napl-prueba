@@ -29,8 +29,8 @@
 
 .game-summary-card {
   display: flex;
-  align-items: flex-start;
-  gap: 28px;
+  flex-direction: column;
+  gap: 18px;
   padding: 24px;
   margin-bottom: 32px;
   background: var(--surface-1);
@@ -39,9 +39,15 @@
   box-shadow: var(--shadow-card);
 }
 
+.game-summary-top {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+}
+
 .game-summary-cover {
-  flex: 0 0 156px;
-  width: 156px;
+  flex: 0 0 132px;
+  width: 132px;
   aspect-ratio: 3 / 4;
   object-fit: cover;
   border-radius: var(--radius-sm);
@@ -61,7 +67,7 @@
 .game-summary-title {
   margin: 0 0 10px;
   font-family: var(--font-display);
-  font-size: clamp(1.6rem, 3vw, 2.35rem);
+  font-size: clamp(1.5rem, 3vw, 2.25rem);
   font-weight: 700;
   line-height: 1.12;
   letter-spacing: -0.025em;
@@ -74,7 +80,6 @@
   flex-wrap: wrap;
   align-items: center;
   gap: 8px;
-  margin-bottom: 14px;
   font-family: var(--font-mono);
   font-size: 12px;
   font-weight: 600;
@@ -89,7 +94,8 @@
 }
 
 .game-summary-description-container {
-  max-width: 68ch;
+  padding-top: 14px;
+  border-top: 1px solid var(--border-subtle);
 }
 
 .game-summary-description {
@@ -777,14 +783,17 @@ a.port-detail-value {
   }
 
   .game-summary-card {
-    flex-direction: column;
-    gap: 18px;
-    padding: 18px;
+    gap: 14px;
+    padding: 16px;
+  }
+
+  .game-summary-top {
+    gap: 16px;
   }
 
   .game-summary-cover {
-    width: 120px;
-    flex-basis: auto;
+    flex: 0 0 96px;
+    width: 96px;
   }
 
   .port-details {
