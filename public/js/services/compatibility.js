@@ -8,6 +8,7 @@
 import {
     COMPATIBILITY_API_URL,
     REPORT_LINK_API_URL,
+    CATALOG_API_BASE,
     USER_DEVICE_STORAGE_KEY,
 } from "../core/config.js";
 import { getRatingToken } from "./ratings.js";
@@ -22,7 +23,10 @@ export async function loadDevices() {
 
     if (!devicesPromise) {
         devicesPromise = (async () => {
-            const response = await fetch("assets/data/devices.json", {
+            const devicesUrl = CATALOG_API_BASE
+                ? `${CATALOG_API_BASE}/devices`
+                : "assets/data/devices.json";
+            const response = await fetch(devicesUrl, {
                 cache: "force-cache",
             });
             if (!response.ok) {
@@ -30,7 +34,8 @@ export async function loadDevices() {
                     `Could not load device database (HTTP ${response.status}).`
                 );
             }
-            const data = await response.json();
+            const payload = await response.json();
+            const data = Array.isArray(payload) ? payload : payload?.devices;
             if (!Array.isArray(data)) {
                 throw new Error("Device database returned an invalid format.");
             }
