@@ -454,6 +454,221 @@ async function handleHealth(env) {
     });
 }
 
+
+// -----------------------------------------------------------------------------
+// Protected one-time migration from the published Google Sheets CSV.
+// Configure IMPORT_SECRET as a Worker secret before using POST /admin/import-sheet.
+// -----------------------------------------------------------------------------
+
+const SHEET_CSV_URL = "https://docs.google.com/spreadsheets/d/1CO7dH7mbj9sl67g4e94wczHESp0NAsOa7_chKKii9OA/export?format=csv";
+
+function importNormalizeHeader(value) {
+    return String(value || "").replace(/^\uFEFF/, "").trim().toUpperCase()
+        .normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+}
+function importNormalizeText(value) {
+    return String(value || "").trim().toLowerCase()
+        .normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+}
+function importSlug(value) {
+    return importNormalizeText(value).replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+}
+function importParseCSV(csv) {
+    const rows = [];
+    let row = [], field = "", quoted = false;
+    for (let i = 0; i < csv.length; i++) {
+        const ch = csv[i];
+        if (ch === '"') {
+            if (quoted && csv[i + 1] === '"') { field += '"'; i++; }
+            else quoted = !quoted;
+        } else if (ch === "," && !quoted) {
+            row.push(field); field = "";
+        } else if ((ch === "\n" || ch === "\r") && !quoted) {
+            if (ch === "\r" && csv[i + 1] === "\n") i++;
+            row.push(field); field = "";
+            if (row.some((v) => v.trim() !== "")) rows.push(row);
+            row = [];
+        } else field += ch;
+    }
+    if (field.length || row.length) {
+        row.push(field);
+        if (row.some((v) => v.trim() !== "")) rows.push(row);
+    }
+    if (!rows.length) return [];
+    const headers = rows.shift().map(importNormalizeHeader);
+    return rows.map((values) => {
+        const obj = {};
+        headers.forEach((header, index) => { if (header) obj[header] = String(values[index] || "").trim(); });
+        return obj;
+    });
+}
+function importColumn(row, aliases) {
+    for (const alias of aliases) {
+        const key = importNormalizeHeader(alias);
+        if (Object.prototype.hasOwnProperty.call(row, key)) return String(row[key] || "").trim();
+    }
+    return "";
+}
+async function importBatch(db, statements) {
+    for (let i = 0; i < statements.length; i += 50) {
+        await db.batch(statements.slice(i, i + 50));
+    }
+}
+async function handleImportSheet(request, env) {
+    if (!env.IMPORT_SECRET) return jsonResponse({ success: false, error: "Import secret is not configured." }, 503);
+    const authorization = request.headers.get("Authorization") || "";
+    const supplied = authorization.startsWith("Bearer ") ? authorization.slice(7).trim() : "";
+    if (!supplied || supplied !== env.IMPORT_SECRET) {
+        return jsonResponse({ success: false, error: "Unauthorized." }, 401);
+    }
+
+    const response = await fetch(SHEET_CSV_URL, {
+        headers: { "Accept": "text/csv,text/plain;q=0.9,*/*;q=0.8" },
+        cf: { cacheTtl: 0, cacheEverything: false }
+    });
+    if (!response.ok) {
+        return jsonResponse({ success: false, error: "Could not download the published Google Sheets CSV.", upstreamStatus: response.status }, 502);
+    }
+    const csv = await response.text();
+    if (!csv || csv.length < 20) return jsonResponse({ success: false, error: "The published CSV is empty or invalid." }, 502);
+
+    const rows = importParseCSV(csv);
+    if (!rows.length || !Object.prototype.hasOwnProperty.call(rows[0], "GAME")) {
+        return jsonResponse({ success: false, error: "CSV headers could not be recognized." }, 422);
+    }
+
+    const platforms = new Map(), games = new Map(), developers = new Map(), categories = new Map();
+    const ports = [], portDeveloperKeys = new Set(), gameCategoryKeys = new Set();
+    let currentGame = "", currentYear = "";
+
+    for (const row of rows) {
+        const gameValue = importColumn(row, ["GAME", "GAME NAME", "NAME", "JUEGO"]);
+        const yearValue = importColumn(row, ["YEAR", "ANO", "AÑO"]);
+        if (gameValue) currentGame = gameValue;
+        if (yearValue) currentYear = yearValue;
+        if (!currentGame) continue;
+
+        const gameSlug = importSlug(currentGame);
+        if (!gameSlug) continue;
+        const platform = importColumn(row, ["PLATFORM", "PLATAFORM", "PLATAFORMA"]);
+        const platformKey = importNormalizeText(platform);
+        if (platform && platformKey !== "multi-game apps" && platformKey !== "multi game apps" && !platforms.has(platformKey)) {
+            platforms.set(platformKey, platform);
+        }
+
+        const rawPortId = importColumn(row, ["PORTS_ID", "PORT ID", "PORT_ID"]);
+        const portId = /^unofficial-port(?:-\d+)?$/i.test(rawPortId)
+            ? gameSlug + "-" + rawPortId.toLowerCase()
+            : (rawPortId || gameSlug + "-port-" + (ports.length + 1));
+
+        const port = {
+            portId, gameSlug, platform,
+            project: importColumn(row, ["PROJECT", "PROYECTO"]),
+            link: importColumn(row, ["LINK", "PROJECT LINK", "ENLACE"]),
+            url: importColumn(row, ["URL", "PORT URL", "PORT LINK"]),
+            developer: importColumn(row, ["DEVELOPER", "DEVELOPER/PUBLISHER", "DESARROLLADOR"]),
+            version: importColumn(row, ["VERSION", "VERSIÓN"]),
+            lastUpdate: importColumn(row, ["LAST UPDATE", "LAST UPDATED", "ÚLTIMA ACTUALIZACIÓN"]),
+            dateAdded: importColumn(row, ["DATE ADDED"]),
+            needsFiles: importColumn(row, ["NEEDS GAME FILES?", "NEEDS GAME FILES", "GAME FILES", "NECESITA ARCHIVOS"]),
+            dataUrl: importColumn(row, ["DATA URL", "DATA LINK", "GAME FILES URL"]),
+            notes: importColumn(row, ["NOTES", "NOTE", "NOTAS"]),
+            works: importColumn(row, ["WORKS?", "WORKS", "FUNCIONA"]),
+            controllerSupport: importColumn(row, ["CONTROLLER SUPPORT", "CONTROLLER", "GAMEPAD", "MANDO"]),
+            sortOrder: ports.length
+        };
+
+        const genre = importColumn(row, ["GENRE", "GÉNERO", "GENERO"]);
+        const description = importColumn(row, ["DESCRIPTION", "DESCRIPCIÓN", "DESCRIPCION"]);
+        const coverUrl = importColumn(row, ["COVER_URL", "COVER URL", "COVER", "COVER IMAGE", "IMAGE URL", "PORTADA"]);
+        const launchboxUrl = importColumn(row, ["LAUNCHBOX_URL", "LAUNCHBOX URL"]);
+        const hasPortData = [
+            platform, port.project, port.link, port.url, port.dataUrl, port.developer,
+            port.version, port.controllerSupport, port.needsFiles, port.works,
+            port.lastUpdate, port.dateAdded, port.notes
+        ].some((v) => String(v || "").trim() !== "");
+        if (!hasPortData) continue;
+
+        if (!games.has(gameSlug)) {
+            games.set(gameSlug, { slug: gameSlug, name: currentGame, year: currentYear, genre, description, coverUrl, launchboxUrl });
+        } else {
+            const g = games.get(gameSlug);
+            if (!g.year && currentYear) g.year = currentYear;
+            if (!g.genre && genre) g.genre = genre;
+            if (!g.description && description) g.description = description;
+            if (!g.coverUrl && coverUrl) g.coverUrl = coverUrl;
+            if (!g.launchboxUrl && launchboxUrl) g.launchboxUrl = launchboxUrl;
+        }
+
+        if (genre) {
+            const slug = importSlug(genre);
+            if (slug) { categories.set(slug, genre); gameCategoryKeys.add(gameSlug + "|" + slug); }
+        }
+        if (port.developer) {
+            const slug = importSlug(port.developer);
+            if (slug) { developers.set(slug, port.developer); portDeveloperKeys.add(gameSlug + "|" + portId + "|" + slug); }
+        }
+        ports.push(port);
+    }
+
+    if (!games.size || !ports.length) {
+        return jsonResponse({ success: false, error: "No game or port records were found in the CSV." }, 422);
+    }
+
+    const platformSql = Array.from(platforms.values()).map((name, i) =>
+        env.DB.prepare("INSERT INTO platforms (name, sort_order) VALUES (?, ?) ON CONFLICT(name) DO UPDATE SET sort_order = excluded.sort_order").bind(name, i)
+    );
+    const gameSql = Array.from(games.values()).map((g) =>
+        env.DB.prepare("INSERT INTO games (slug, name, year, genre, description, cover_url, launchbox_url) VALUES (?, ?, ?, ?, ?, ?, ?) " +
+            "ON CONFLICT(slug) DO UPDATE SET name = excluded.name, " +
+            "year = CASE WHEN excluded.year <> '' THEN excluded.year ELSE games.year END, " +
+            "genre = CASE WHEN excluded.genre <> '' THEN excluded.genre ELSE games.genre END, " +
+            "description = CASE WHEN excluded.description <> '' THEN excluded.description ELSE games.description END, " +
+            "cover_url = CASE WHEN excluded.cover_url <> '' THEN excluded.cover_url ELSE games.cover_url END, " +
+            "launchbox_url = CASE WHEN excluded.launchbox_url <> '' THEN excluded.launchbox_url ELSE games.launchbox_url END, updated_at = CURRENT_TIMESTAMP"
+        ).bind(g.slug, g.name, g.year, g.genre, g.description, g.coverUrl, g.launchboxUrl)
+    );
+    const developerSql = Array.from(developers.entries()).map(([slug, name]) =>
+        env.DB.prepare("INSERT INTO developers (name, slug) VALUES (?, ?) ON CONFLICT(name) DO UPDATE SET slug = excluded.slug").bind(name, slug)
+    );
+    const categorySql = Array.from(categories.entries()).map(([slug, name]) =>
+        env.DB.prepare("INSERT INTO categories (name, slug) VALUES (?, ?) ON CONFLICT(name) DO UPDATE SET slug = excluded.slug").bind(name, slug)
+    );
+    const portSql = ports.map((p) =>
+        env.DB.prepare("INSERT INTO ports (port_id, game_slug, platform, project, link, url, developer, version, last_update, date_added, needs_files, data_url, notes, works, controller_support, sort_order) " +
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) " +
+            "ON CONFLICT(game_slug, port_id) DO UPDATE SET platform = excluded.platform, project = excluded.project, link = excluded.link, url = excluded.url, developer = excluded.developer, version = excluded.version, last_update = excluded.last_update, date_added = excluded.date_added, needs_files = excluded.needs_files, data_url = excluded.data_url, notes = excluded.notes, works = excluded.works, controller_support = excluded.controller_support, sort_order = excluded.sort_order"
+        ).bind(p.portId, p.gameSlug, p.platform, p.project, p.link, p.url, p.developer, p.version, p.lastUpdate, p.dateAdded, p.needsFiles, p.dataUrl, p.notes, p.works, p.controllerSupport, p.sortOrder)
+    );
+    const portDeveloperSql = Array.from(portDeveloperKeys).map((entry) => {
+        const [gameSlug, portId, devSlug] = entry.split("|");
+        return env.DB.prepare("INSERT INTO port_developers (game_slug, port_id, developer_id) SELECT ?, ?, id FROM developers WHERE slug = ? ON CONFLICT(game_slug, port_id, developer_id) DO NOTHING").bind(gameSlug, portId, devSlug);
+    });
+    const gameCategorySql = Array.from(gameCategoryKeys).map((entry) => {
+        const [gameSlug, categorySlug] = entry.split("|");
+        return env.DB.prepare("INSERT INTO game_categories (game_slug, category_id) SELECT ?, id FROM categories WHERE slug = ? ON CONFLICT(game_slug, category_id) DO NOTHING").bind(gameSlug, categorySlug);
+    });
+
+    await importBatch(env.DB, platformSql);
+    await importBatch(env.DB, gameSql);
+    await importBatch(env.DB, developerSql);
+    await importBatch(env.DB, categorySql);
+    await importBatch(env.DB, portSql);
+    await importBatch(env.DB, portDeveloperSql);
+    await importBatch(env.DB, gameCategorySql);
+
+    return jsonResponse({
+        success: true,
+        message: "Google Sheets catalog imported into D1.",
+        imported: {
+            csvRows: rows.length, platforms: platforms.size, games: games.size, ports: ports.length,
+            developers: developers.size, categories: categories.size,
+            portDeveloperRelations: portDeveloperKeys.size, gameCategoryRelations: gameCategoryKeys.size
+        }
+    });
+}
+
+
 export default {
     async fetch(request, env) {
         if (request.method === "OPTIONS") {
@@ -464,6 +679,10 @@ export default {
         const path = url.pathname.replace(/\/+$/, "") || "/";
 
         try {
+            if (request.method === "POST" && path === "/admin/import-sheet") {
+                return await handleImportSheet(request, env);
+            }
+
             if (request.method === "GET" && path === "/health") {
                 return await handleHealth(env);
             }
