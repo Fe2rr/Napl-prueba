@@ -303,12 +303,14 @@ function updateGameSelection() {
     setValue("description", selected.description);
     setValue("coverUrl", selected.cover_url);
     setValue("launchboxUrl", selected.launchbox_url);
+    setValue("visits", selected.visits);
     $("game-name").readOnly = true;
     gameSelectionHint.textContent = "Existing game selected. Its information has been loaded.";
   } else {
     selectedGameSlug = "__new__";
     setValue("gameName", typedName);
     for (const key of ["year", "genre", "description", "coverUrl", "launchboxUrl"]) setValue(key, "");
+    setValue("visits", 0);
     $("game-name").readOnly = false;
     gameSelectionHint.textContent = typedName ? "New game — it will be created when you save the port." : "Choose an existing game or enter a new name.";
   }
