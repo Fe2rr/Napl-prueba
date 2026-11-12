@@ -559,12 +559,14 @@ async function updateGitHubVersions(env) {
     const repos = Array.from(repoMap.values());
     const results = new Map();
     const errors = [];
+    let withoutVersion = 0;
     const batchSize = 20;
     for (let offset = 0; offset < repos.length; offset += batchSize) {
         const batch = repos.slice(offset, offset + batchSize);
         const resolved = await Promise.all(batch.map((info) => resolveGitHubVersion(info, env.GITHUB_TOKEN)));
         for (const item of resolved) {
             if (item.version) results.set(item.key, item);
+            else if (item.error === 'no_release_or_tag') withoutVersion++;
             else if (item.error) errors.push({ repository: item.key, error: item.error });
         }
     }
@@ -590,7 +592,7 @@ async function updateGitHubVersions(env) {
         updatedRows++;
     }
     for (let i = 0; i < statements.length; i += 50) await env.DB.batch(statements.slice(i, i + 50));
-    return { success: true, uniqueRepositories: repos.length, repositoriesWithVersion: results.size, updatedRows, versionRows, dateRows, errors };
+    return { success: true, uniqueRepositories: repos.length, repositoriesWithVersion: results.size, withoutVersion, updatedRows, versionRows, dateRows, errors };
 }
 
 async function handleUpdateGitHubVersions(request, env) {
