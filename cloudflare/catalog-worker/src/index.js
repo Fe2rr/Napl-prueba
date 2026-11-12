@@ -1156,8 +1156,8 @@ async function handleAdminListPorts(request, env) {
             link: p.link || "", url: p.url || "", developer: p.developer || "",
             version: p.version || "", lastUpdate: p.last_update || "",
             dateAdded: p.date_added || "", needsFiles: p.needs_files || "",
-            dataUrl: p.data_url || "", notes: p.notes || "", works: p.works || "",
-            controllerSupport: p.controller_support || ""
+            dataUrl: p.data_url || "", notes: p.notes || "",
+            inputMethods: p.controller_support || ""
         }))
     }, 200, { "Cache-Control": "no-store" });
 }
@@ -1191,7 +1191,7 @@ async function handleAdminSavePort(request, env) {
         version: clean(body.version, 100), lastUpdate: clean(body.lastUpdate, 100),
         dateAdded: clean(body.dateAdded, 100) || new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString().slice(0, 19).replace('T', ' '), needsFiles: clean(body.needsFiles, 100),
         dataUrl: clean(body.dataUrl, 1000), notes: clean(body.notes, 2000),
-        works: clean(body.works, 100), controllerSupport: clean(body.controllerSupport, 100)
+        inputMethods: clean(body.inputMethods, 100)
     };
 
     const existingGame = await env.DB.prepare("SELECT slug FROM games WHERE slug = ?").bind(gameSlug).first();
@@ -1213,8 +1213,8 @@ async function handleAdminSavePort(request, env) {
         env.DB.prepare("INSERT INTO games (slug, name, year, genre, description, cover_url, launchbox_url) VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT(slug) DO UPDATE SET name = excluded.name, year = excluded.year, genre = excluded.genre, description = excluded.description, cover_url = excluded.cover_url, launchbox_url = excluded.launchbox_url, updated_at = CURRENT_TIMESTAMP")
             .bind(game.slug, game.name, game.year, game.genre, game.description, game.coverUrl, game.launchboxUrl),
         env.DB.prepare("INSERT INTO platforms (name, sort_order) VALUES (?, 999) ON CONFLICT(name) DO NOTHING").bind(port.platform),
-        env.DB.prepare("INSERT INTO ports (port_id, game_slug, platform, project, link, url, developer, version, last_update, date_added, needs_files, data_url, notes, works, controller_support, sort_order) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(game_slug, port_id) DO UPDATE SET platform = excluded.platform, project = excluded.project, link = excluded.link, url = excluded.url, developer = excluded.developer, version = excluded.version, last_update = excluded.last_update, date_added = CASE WHEN TRIM(COALESCE(ports.date_added, '')) <> '' THEN ports.date_added ELSE excluded.date_added END, needs_files = excluded.needs_files, data_url = excluded.data_url, notes = excluded.notes, works = excluded.works, controller_support = excluded.controller_support")
-            .bind(port.portId, game.slug, port.platform, port.project, port.link, port.url, port.developer, port.version, port.lastUpdate, port.dateAdded, port.needsFiles, port.dataUrl, port.notes, port.works, port.controllerSupport, Number(sortRow?.next_order) || 0),
+        env.DB.prepare("INSERT INTO ports (port_id, game_slug, platform, project, link, url, developer, version, last_update, date_added, needs_files, data_url, notes, works, controller_support, sort_order) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(game_slug, port_id) DO UPDATE SET platform = excluded.platform, project = excluded.project, link = excluded.link, url = excluded.url, developer = excluded.developer, version = excluded.version, last_update = excluded.last_update, date_added = CASE WHEN TRIM(COALESCE(ports.date_added, '')) <> '' THEN ports.date_added ELSE excluded.date_added END, needs_files = excluded.needs_files, data_url = excluded.data_url, notes = excluded.notes, controller_support = excluded.controller_support")
+            .bind(port.portId, game.slug, port.platform, port.project, port.link, port.url, port.developer, port.version, port.lastUpdate, port.dateAdded, port.needsFiles, port.dataUrl, port.notes, "" , port.inputMethods, Number(sortRow?.next_order) || 0),
         env.DB.prepare("DELETE FROM port_developers WHERE game_slug = ? AND port_id = ?").bind(game.slug, port.portId),
         env.DB.prepare("DELETE FROM game_categories WHERE game_slug = ?").bind(game.slug)
     ];
