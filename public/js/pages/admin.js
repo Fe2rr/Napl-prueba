@@ -136,11 +136,11 @@ function populateOptions(selectedName = "", selectedPlatform = "") {
 }
 
 function getDownloadLabel(port) {
-  return String(port.project || port.url || port.link || port.portId || "Unnamed port").trim();
+  return String(port.link || port.project || port.portId || "Download").trim();
 }
 
 function isGitHubPort(port) {
-  return [port.url, port.link].some((candidate) => {
+  return [port.url].some((candidate) => {
     if (!candidate) return false;
     try { return new URL(candidate).hostname.toLowerCase() === "github.com" || new URL(candidate).hostname.toLowerCase().endsWith(".github.com"); }
     catch { return /(^|\/)github\.com\//i.test(candidate); }
@@ -163,7 +163,7 @@ function makePortRow(port) {
 
   const actions = document.createElement("div");
   actions.className = "port-actions";
-  const destination = port.url || port.link;
+  const destination = port.url;
   if (destination) {
     const download = document.createElement("a");
     download.className = "button download-link";
