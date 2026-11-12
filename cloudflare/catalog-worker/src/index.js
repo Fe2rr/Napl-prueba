@@ -1155,11 +1155,20 @@ async function handleAdminSavePort(request, env) {
     const requestedSlug = clean(body.gameSlug, 180);
     const isNewGame = requestedSlug === "__new__";
     const gameSlug = isNewGame ? importSlug(gameName) : requestedSlug;
-    const portId = clean(body.portId, 120);
+    let portId = clean(body.portId, 120);
     const originalPortId = clean(body.originalPortId, 120);
     const platform = clean(body.platform, 100);
+    if (!portId && originalPortId) portId = originalPortId;
+    if (!portId && gameSlug) {
+        const idBase = gameSlug.slice(0, 100) + "-port-";
+        let sequence = 1;
+        while (await env.DB.prepare("SELECT 1 AS found FROM ports WHERE game_slug = ? AND port_id = ?").bind(gameSlug, idBase + sequence).first()) {
+            sequence++;
+        }
+        portId = idBase + sequence;
+    }
     if (!gameName || !gameSlug || !portId || !platform) {
-        return jsonResponse({ success: false, error: "Game name, game, port ID and platform are required." }, 400);
+        return jsonResponse({ success: false, error: "Game name, game and platform are required." }, 400);
     }
 
     const game = {
