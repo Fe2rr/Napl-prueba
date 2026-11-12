@@ -45,16 +45,20 @@
           <div class="form-grid">
             <div class="field">
               <label for="platform">Platform</label>
-              <input id="platform" maxlength="100" list="platform-options" autocomplete="off" required>
-              <datalist id="platform-options"></datalist>
+              <input id="platform" type="hidden" required>
+              <select id="platform-select" required>
+                <option value="">Select a platform…</option>
+                <option value="__new__">＋ Add new platform…</option>
+              </select>
+              <input id="platform-new" maxlength="100" placeholder="Enter new platform name" hidden>
             </div>
           </div>
 
           <h3>Game</h3>
           <div class="field game-autocomplete">
             <label for="game-search">Game</label>
-            <input id="game-search" type="search" maxlength="180" list="game-options" placeholder="Search an existing game or type a new name…" autocomplete="off" required>
-            <datalist id="game-options"></datalist>
+            <input id="game-search" type="search" maxlength="180" placeholder="Search an existing game or type a new name…" autocomplete="off" required>
+            <div id="game-suggestions" class="game-suggestions" hidden></div>
             <p class="field-hint" id="game-selection-hint">Choose an existing game or enter a new name.</p>
           </div>
           <div class="field">
