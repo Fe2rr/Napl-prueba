@@ -1658,15 +1658,26 @@ const ANDROID_HANDHELD_DEVICES = [
 ];
 
 function normalizeDevicePart(value) {
-    return String(value || "").normalize("NFKD").replace(/[\\u0300-\\u036f]/g, "")
+    return String(value || "").normalize("NFKD").replace(/[\u0300-\u036f]/g, "")
         .toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
 }
 
 function deviceSlug(value) {
-    return normalizeDevicePart(value).replace(/\\s+/g, "-").slice(0, 140);
+    return normalizeDevicePart(value).replace(/\s+/g, "-").slice(0, 140);
+}
+
+function hashDeviceKey(value) {
+    let hash = 2166136261;
+    for (let i = 0; i < value.length; i++) {
+        hash ^= value.charCodeAt(i);
+        hash = Math.imul(hash, 16777619);
+    }
+    return (hash >>> 0).toString(16).padStart(8, "0");
 }
 
 function handheldManufacturer(name) {
+    if (name.startsWith("KT-R1")) return "KT";
+    if (name.startsWith("TJD ")) return "TJD";
     const prefixes = ["AYANEO", "Anbernic", "Powkiddy", "Retroid", "Logitech", "Abxylute", "KONKR", "MANGMI", "Pimax", "ZPG", "MOQI", "GPD", "AYN"];
     const lower = name.toLowerCase();
     return prefixes.find((prefix) => lower.startsWith(prefix.toLowerCase())) || "Other";
@@ -1686,6 +1697,7 @@ async function loadAndNormalizeDevices() {
     const formFactorCounts = { Phone: 0, Tablet: 0 };
     let missingCpu = 0;
     let matchingRecords = 0;
+    let invalidRecords = 0;
 
     for (const item of source) {
         const formFactor = String(item?.formFactor || "").trim();
@@ -1696,12 +1708,15 @@ async function loadAndNormalizeDevices() {
         const manufacturer = String(item?.manufacturer || "").trim();
         const model = String(item?.modelName || item?.device || "").trim();
         const cpu = String(item?.processorName || "").trim();
-        if (!manufacturer || !model) continue;
+        if (!manufacturer || !model) {
+            invalidRecords++;
+            continue;
+        }
         if (!cpu) missingCpu++;
 
         const key = [manufacturer, model, cpu].map(normalizeDevicePart).join("|");
         const displayName = model + (cpu ? " (" + cpu + ")" : "");
-        const id = "catalog:" + deviceSlug(manufacturer + "-" + model + (cpu ? "-" + cpu : ""));
+        const id = "catalog:" + deviceSlug(manufacturer + "-" + model + (cpu ? "-" + cpu : "")) + "-" + hashDeviceKey(key);
         if (!devices.has(key)) {
             devices.set(key, {
                 id,
@@ -1714,23 +1729,52 @@ async function loadAndNormalizeDevices() {
     }
 
     const catalogDevices = devices.size;
+    let handheldsAdded = 0;
+    let handheldsAlreadyInCatalog = 0;
     for (const name of ANDROID_HANDHELD_DEVICES) {
         const manufacturer = handheldManufacturer(name);
         const model = name.slice(manufacturer === "Other" ? 0 : manufacturer.length).trim() || name;
         const key = [manufacturer, model, ""].map(normalizeDevicePart).join("|");
-        if (!devices.has(key)) {
-            devices.set(key, {
-                id: "handheld:" + deviceSlug(name),
-                name: name.slice(0, 180),
-                manufacturer: manufacturer.slice(0, 100),
-                model: model.slice(0, 140),
-                cpu: ""
-            });
+        if (devices.has(key)) {
+            handheldsAlreadyInCatalog++;
+            continue;
         }
+        devices.set(key, {
+            id: "handheld:" + deviceSlug(name) + "-" + hashDeviceKey(key),
+            name: name.slice(0, 180),
+            manufacturer: manufacturer.slice(0, 100),
+            model: model.slice(0, 140),
+            cpu: ""
+        });
+        handheldsAdded++;
     }
 
     const result = Array.from(devices.values()).sort((a, b) => a.name.localeCompare(b.name));
     if (!result.length) throw new Error("No se encontraron dispositivos Android compatibles; la base no fue modificada.");
+
+    const manufacturerCounts = {};
+    for (const device of result) {
+        manufacturerCounts[device.manufacturer] = (manufacturerCounts[device.manufacturer] || 0) + 1;
+    }
+    const sortedManufacturerCounts = Object.fromEntries(
+        Object.entries(manufacturerCounts).sort((a, b) => a[0].localeCompare(b[0]))
+    );
+    const ids = new Set();
+    let idCollisionCount = 0;
+    let invalidIdCount = 0;
+    for (const device of result) {
+        if (ids.has(device.id)) idCollisionCount++;
+        ids.add(device.id);
+        if (/[^a-zA-Z0-9:_-]/.test(device.id)) invalidIdCount++;
+    }
+
+    const handheldDevices = result.filter((device) => device.id.startsWith("handheld:"));
+    const redmiDevices = result.filter((device) =>
+        /redmi/i.test(device.model) || /redmi/i.test(device.manufacturer)
+    );
+    const xiaomiDevices = result.filter((device) =>
+        /xiaomi|poco/i.test(device.manufacturer) || /xiaomi|poco/i.test(device.model)
+    );
 
     return {
         devices: result,
@@ -1740,11 +1784,21 @@ async function loadAndNormalizeDevices() {
             phones: formFactorCounts.Phone,
             tablets: formFactorCounts.Tablet,
             catalogDevices,
-            handheldsAdded: result.length - catalogDevices,
+            handheldsInManualList: ANDROID_HANDHELD_DEVICES.length,
+            handheldsAdded,
+            handheldsAlreadyInCatalog,
             duplicatesGrouped: Math.max(0, matchingRecords - catalogDevices),
+            invalidRecords,
             missingCpu,
             total: result.length,
-            sample: result.filter((device) => /redmi 10c/i.test(device.model)).slice(0, 5),
+            redmiCount: redmiDevices.length,
+            xiaomiPocoCount: xiaomiDevices.length,
+            manufacturerCounts: sortedManufacturerCounts,
+            idCollisionCount,
+            invalidIdCount,
+            redmiDevices,
+            xiaomiPocoDevices: xiaomiDevices,
+            handheldDevices,
             examples: result.slice(0, 12)
         }
     };
