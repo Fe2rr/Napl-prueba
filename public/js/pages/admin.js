@@ -662,7 +662,7 @@ deleteButton.addEventListener("click", async () => {
   if (!editing || deleteButton.disabled) return;
   const port = ports.find((item) => item.gameSlug === editing.gameSlug && item.portId === editing.portId);
   const label = port ? `${port.gameName} — ${port.project || port.portId}` : editing.portId;
-  if (!window.confirm(`Delete only this port entry?\n\n${label}\n\nThe game and its other ports will remain unchanged.`)) return;
+  if (!window.confirm(`Delete only this port entry?\n\n${label}\n\nIf this is the game's last port, the game will disappear from the catalog.`)) return;
 
   deleteButton.disabled = true;
   deleteButton.textContent = "Deleting…";
@@ -680,7 +680,7 @@ deleteButton.addEventListener("click", async () => {
     populateOptions();
     editor.hidden = true;
     editing = null;
-    showMessage($("global-message"), "Port deleted. Other ports and the game were preserved.");
+    showMessage($("global-message"), "Port deleted. Google Sheets and the catalog cache were updated.");
   } catch (error) {
     showMessage(formMessage, error.message, true);
   } finally {
