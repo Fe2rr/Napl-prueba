@@ -172,7 +172,7 @@ function renderList() {
   }
 
   const fragment = document.createDocumentFragment();
-  const normalizePlatform = (value) => String(value || "").toLowerCase().normalize("NFD").replace(/[\\u0300-\\u036f]/g, "");
+  const normalizePlatform = (value) => String(value || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
   const getPlatformGroup = (platform) => {
     const normalized = normalizePlatform(platform);
     if (normalized === "others" || normalized === "other") return "Others";
