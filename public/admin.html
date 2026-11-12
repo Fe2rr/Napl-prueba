@@ -33,14 +33,13 @@
       </div>
 
       <section class="panel maintenance-panel" aria-labelledby="maintenance-title">
-        <div class="maintenance-heading"><div><h2 id="maintenance-title">Data maintenance</h2><p class="muted">Run catalog metadata updates manually.</p></div></div>
+        <div class="maintenance-heading"><div><h2 id="maintenance-title">Data maintenance</h2><p class="muted">Google Sheets is the catalog source. GitHub updates write directly to the sheet.</p></div></div>
         <div class="maintenance-actions">
           <button class="button secondary maintenance-button" type="button" data-maintenance-action="update-github-versions">Update GitHub releases</button>
           <button class="button secondary maintenance-button" type="button" data-maintenance-action="update-developers">Complete developers</button>
-          <button class="button secondary maintenance-button" type="button" data-maintenance-action="update-launchbox-data">Complete LaunchBox data</button>
-          <button class="button secondary maintenance-button" type="button" data-maintenance-action="update-steam-data">Complete Steam data</button>
+          <button class="button secondary maintenance-button" type="button" data-maintenance-action="sync-catalog-cache">Sync Sheets catalog to Cloudflare</button>
         </div>
-        <p id="maintenance-status" class="message" role="status" aria-live="polite">Updates only fill empty fields, except GitHub releases, which refresh version and last update.</p>
+        <p id="maintenance-status" class="message" role="status" aria-live="polite">LaunchBox and Steam metadata remain managed by their existing Apps Script automations.</p>
       </section>
 
       <section class="panel list-panel">
