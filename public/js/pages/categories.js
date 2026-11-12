@@ -193,6 +193,10 @@ export function createCategoryController(state) {
             });
     }
 
+    function normalizePlatformForFilter(value) {
+        return normalizeText(value).replace(/^nintendo\\s+/, "");
+    }
+
     function displayFilteredGames() {
         const query = normalizeText(categorySearchInput?.value || "");
 
@@ -232,8 +236,8 @@ export function createCategoryController(state) {
                 state.selectedPlatform &&
                 !game.platforms.some(
                     (platform) =>
-                        normalizeText(platform) ===
-                        normalizeText(state.selectedPlatform)
+                        normalizePlatformForFilter(platform) ===
+                        normalizePlatformForFilter(state.selectedPlatform)
                 )
             ) {
                 return false;
