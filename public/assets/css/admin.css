@@ -25,3 +25,61 @@
 .game-suggestion:last-child{border-bottom:0}
 .game-suggestion:hover,.game-suggestion:focus{background:var(--panel-2);outline:none}
 #platform-new{margin-top:9px}
+
+
+/* Admin editor: editable version of the public game detail layout */
+.editor-panel{margin-top:18px;scroll-margin-top:16px}
+.game-page-editor{display:flex;flex-direction:column;gap:24px}
+.admin-game-summary{display:flex;flex-direction:column;gap:18px;padding:24px;background:#14231b;border:1px solid #304638;border-radius:15px}
+.admin-game-summary .game-summary-top{display:flex;align-items:flex-start;gap:24px}
+.admin-cover-column{flex:0 0 132px;width:132px;min-width:0}
+.admin-cover-frame{width:132px;min-height:176px;display:flex;align-items:center;justify-content:center;overflow:hidden;border:1px solid #304638;border-radius:9px;background:#1b2e23}
+.admin-cover-frame .game-summary-cover{display:block;flex:none;width:100%;height:auto;max-height:220px;aspect-ratio:3/4;object-fit:contain;border:0;border-radius:0}
+.admin-cover-placeholder{padding:12px;text-align:center;color:#9aafa0;font:700 10px ui-monospace,monospace;letter-spacing:.12em}
+.admin-cover-url{margin-top:10px}
+.admin-game-summary .game-summary-info{flex:1;min-width:0}
+.admin-game-title{margin-bottom:12px}
+.admin-game-title input{font-size:clamp(20px,3vw,30px);font-weight:750;line-height:1.2;padding:8px 10px}
+.admin-game-metadata{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.admin-game-metadata .field{min-width:0;margin:0}
+.admin-game-metadata input{font:600 12px ui-monospace,monospace}
+.admin-description{padding-top:16px;border-top:1px solid #304638}
+.admin-description .field:last-child{margin-bottom:0}
+.admin-description textarea{line-height:1.6}
+.admin-section-heading{margin-bottom:12px}
+.admin-section-heading .ports-section-title{font-size:20px;margin:0 0 4px;color:#edf5ee}
+.admin-section-heading .ports-section-description{font-size:13px;margin:0;color:#9aafa0}
+.admin-port-card{display:flex;flex-direction:column;gap:12px;padding:14px 16px;background:#14231b;border:1px solid #304638;border-radius:12px}
+.admin-port-card .port-top{margin:-14px -16px 0;padding:12px 16px 10px;background:#1b2e23;border-bottom:1px solid #304638;border-radius:12px 12px 0 0}
+.admin-port-card .port-top .field{width:100%;margin:0}
+.admin-port-card .port-top input{font-size:17px;font-weight:700;background:#0e1913}
+.admin-port-card .port-details{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.admin-port-card .port-detail{display:flex;flex-direction:column;gap:5px;min-width:0}
+.admin-port-card .port-detail-label{font:600 10px/1.2 ui-monospace,monospace;letter-spacing:.06em;text-transform:uppercase;color:#9aafa0}
+.admin-port-card .port-notes{padding-top:10px;border-top:1px solid #304638}
+.admin-port-card .port-notes .field{margin:0}
+.admin-port-card .port-notes-label{display:block;margin-bottom:6px}
+.admin-download-row{display:grid;grid-template-columns:minmax(0,.8fr) minmax(0,1.5fr);gap:10px;margin-top:2px}
+.admin-download-row .field{min-width:0;margin:0}
+.admin-download-row .field:first-child{display:flex;flex-direction:column;justify-content:flex-end}
+.admin-download-row .field:first-child input{min-height:44px}
+.admin-download-row .field:last-child input{min-height:44px}
+.admin-extra-fields{padding:14px 16px;border:1px solid #304638;border-radius:10px;background:#101d16}
+.admin-extra-fields>summary{cursor:pointer;font-size:13px;font-weight:700;color:#c4d4c8}
+.admin-extra-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin-top:15px}
+.admin-extra-grid .field{margin:0;min-width:0}
+.admin-checkbox-field label{display:flex;align-items:center;gap:8px}
+.admin-checkbox-field input{width:auto;margin:0}
+.admin-checkbox-field .field-hint{font-size:11px;margin:5px 0 0}
+.game-page-editor .field-hint{font-size:11px;margin:6px 0 0;color:#9aafa0}
+.game-page-editor input:focus,.game-page-editor select:focus,.game-page-editor textarea:focus{outline:2px solid #689c75;outline-offset:1px}
+@media(max-width:620px){
+ .admin-game-summary{padding:15px;gap:14px}
+ .admin-game-summary .game-summary-top{gap:14px}
+ .admin-cover-column{flex-basis:96px;width:96px}
+ .admin-cover-frame{width:96px;min-height:128px}
+ .admin-game-metadata{grid-template-columns:1fr;gap:8px}
+ .admin-port-card .port-details{grid-template-columns:1fr}
+ .admin-download-row{grid-template-columns:1fr}
+ .admin-extra-grid{grid-template-columns:1fr}
+}
