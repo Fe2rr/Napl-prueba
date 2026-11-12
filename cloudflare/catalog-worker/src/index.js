@@ -603,7 +603,7 @@ async function handleUpdateGitHubVersions(request, env) {
 
 async function updateDevelopers(env) {
     const rowsResult = await env.DB.prepare(
-        "SELECT game_slug, port_id, url FROM ports WHERE url IS NOT NULL AND TRIM(url) <> ''"
+        "SELECT game_slug, port_id, url FROM ports WHERE url IS NOT NULL AND TRIM(url) <> '' AND TRIM(COALESCE(developer, '')) = ''"
     ).all();
 
     const statements = [];
