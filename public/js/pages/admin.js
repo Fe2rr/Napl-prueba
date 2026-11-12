@@ -83,12 +83,31 @@ async function unlock(candidate) {
   populateOptions();
 }
 
-function populateOptions(selectedName = "") {
-  gameOptions.replaceChildren(...games.map((game) => {
+function populateGameOptions(query = "") {
+  const normalizedQuery = query.trim().toLocaleLowerCase();
+  const matches = normalizedQuery
+    ? games
+        .filter((game) => game.name.toLocaleLowerCase().includes(normalizedQuery))
+        .sort((a, b) => {
+          const aName = a.name.toLocaleLowerCase();
+          const bName = b.name.toLocaleLowerCase();
+          const aStarts = aName.startsWith(normalizedQuery);
+          const bStarts = bName.startsWith(normalizedQuery);
+          if (aStarts !== bStarts) return aStarts ? -1 : 1;
+          return aName.localeCompare(bName);
+        })
+        .slice(0, 5)
+    : [];
+
+  gameOptions.replaceChildren(...matches.map((game) => {
     const option = document.createElement("option");
     option.value = game.name;
     return option;
   }));
+}
+
+function populateOptions(selectedName = "") {
+  populateGameOptions(selectedName);
   gameSearch.value = selectedName;
   const availablePlatforms = [...new Set(ports.map((p) => p.platform).filter(Boolean))];
   const ordered = [...platformOrder, ...availablePlatforms.filter((p) => !platformOrder.includes(p))];
@@ -257,6 +276,7 @@ function openEditor(port = null) {
 function updateGameSelection() {
   if (editing) return;
   const typedName = gameSearch.value.trim();
+  populateGameOptions(typedName);
   const selected = games.find((game) => game.name.toLocaleLowerCase() === typedName.toLocaleLowerCase());
 
   if (selected) {
