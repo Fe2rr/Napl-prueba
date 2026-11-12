@@ -15,6 +15,7 @@ const editor = $("editor-panel");
 const form = $("port-form");
 const formMessage = $("form-message");
 const saveButton = $("save-button");
+const deleteButton = $("delete-port-button");
 const gameSearch = $("game-name");
 const gameSuggestions = $("game-suggestions");
 const projectSearch = $("project");
@@ -543,6 +544,7 @@ function openEditor(port = null) {
   showMessage(formMessage, "");
   $("editor-title").textContent = port ? "Edit port" : "Add port";
   saveButton.textContent = port ? "Save changes" : "Add port";
+  deleteButton.hidden = !port;
   populateOptions(port?.gameName || "", port?.platform || "");
   selectedGameSlug = port?.gameSlug || "__new__";
 
@@ -622,6 +624,37 @@ $("new-port-button").addEventListener("click", () => openEditor());
 $("cancel-edit").addEventListener("click", () => { editor.hidden = true; editing = null; });
 searchInput.addEventListener("input", renderList);
 logoutButton.addEventListener("click", lock);
+
+deleteButton.addEventListener("click", async () => {
+  if (!editing || deleteButton.disabled) return;
+  const port = ports.find((item) => item.gameSlug === editing.gameSlug && item.portId === editing.portId);
+  const label = port ? `${port.gameName} — ${port.project || port.portId}` : editing.portId;
+  if (!window.confirm(`Delete only this port entry?\n\n${label}\n\nThe game and its other ports will remain unchanged.`)) return;
+
+  deleteButton.disabled = true;
+  deleteButton.textContent = "Deleting…";
+  showMessage(formMessage, "Deleting port…");
+  try {
+    await api("/admin/ports/delete", {
+      method: "POST",
+      body: JSON.stringify({ gameSlug: editing.gameSlug, portId: editing.portId })
+    });
+    const data = await api("/admin/ports/list");
+    games = data.games || [];
+    ports = data.ports || [];
+    platformOrder = data.platforms || [];
+    renderList();
+    populateOptions();
+    editor.hidden = true;
+    editing = null;
+    showMessage($("global-message"), "Port deleted. Other ports and the game were preserved.");
+  } catch (error) {
+    showMessage(formMessage, error.message, true);
+  } finally {
+    deleteButton.disabled = false;
+    deleteButton.textContent = "Delete this port";
+  }
+});
 
 authForm.addEventListener("submit", async (event) => {
   event.preventDefault();
