@@ -1291,16 +1291,25 @@ async function handleAdminDeletePort(request, env) {
         return jsonResponse({ success: false, error: "Port not found. Reload the catalog and try again." }, 404);
     }
 
-    // Delete only the selected port and its developer association.
-    // The game, sibling ports, visits, ratings and other catalog data are untouched.
-    await env.DB.batch([
+    // Remove the selected port. If it was the game's final port, remove
+    // the now-empty game and its game-level catalog/visit records as well.
+    const results = await env.DB.batch([
         env.DB.prepare("DELETE FROM port_developers WHERE game_slug = ? AND port_id = ?")
             .bind(gameSlug, portId),
         env.DB.prepare("DELETE FROM ports WHERE game_slug = ? AND port_id = ?")
-            .bind(gameSlug, portId)
+            .bind(gameSlug, portId),
+        env.DB.prepare("DELETE FROM games WHERE slug = ? AND NOT EXISTS (SELECT 1 FROM ports WHERE game_slug = ?)")
+            .bind(gameSlug, gameSlug),
+        env.DB.prepare("DELETE FROM game_visit_totals WHERE game_slug = ? AND NOT EXISTS (SELECT 1 FROM ports WHERE game_slug = ?)")
+            .bind(gameSlug, gameSlug),
+        env.DB.prepare("DELETE FROM game_visits WHERE game_slug = ? AND NOT EXISTS (SELECT 1 FROM ports WHERE game_slug = ?)")
+            .bind(gameSlug, gameSlug),
+        env.DB.prepare("DELETE FROM game_visit_daily_totals WHERE game_slug = ? AND NOT EXISTS (SELECT 1 FROM ports WHERE game_slug = ?)")
+            .bind(gameSlug, gameSlug)
     ]);
+    const gameDeleted = Number(results[2]?.meta?.changes || 0) > 0;
 
-    return jsonResponse({ success: true, gameSlug, portId });
+    return jsonResponse({ success: true, gameSlug, portId, gameDeleted });
 }
 
 // -----------------------------------------------------------------------------
