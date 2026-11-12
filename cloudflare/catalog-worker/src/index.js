@@ -676,6 +676,9 @@ async function handleUpdateGitHubVersions(request, env) {
     try { body = await request.json(); } catch (_) {}
     const offset = Math.max(0, Number.parseInt(body.offset, 10) || 0);
     const result = await updateGitHubVersions(env, offset);
+    if (result.complete && env.CATALOG_KV) {
+        await refreshCatalogCache(env);
+    }
     return jsonResponse(result, 200, { 'Cache-Control': 'no-store' });
 }
 
@@ -1355,6 +1358,10 @@ async function handleAdminSavePort(request, env) {
     const portValues = makeValues(target?.values || []);
     set(portValues, ["GAME"], gameName);
     set(portValues, ["YEAR"], clean(body.year, 20));
+    set(portValues, ["GENRE"], clean(body.genre, 120));
+    set(portValues, ["DESCRIPTION"], clean(body.description, 4000));
+    set(portValues, ["COVER_URL","COVER URL"], clean(body.coverUrl, 1000));
+    set(portValues, ["LAUNCHBOX_URL","LAUNCHBOX URL"], clean(body.launchboxUrl, 1000));
     set(portValues, ["PORTS_ID"], portId);
     set(portValues, ["PLATFORM"], platform);
     set(portValues, ["PROJECT"], clean(body.project, 300));
