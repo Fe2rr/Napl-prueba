@@ -32,29 +32,33 @@
 
 /* Segmented Navigation Tabs */
 .home-tabs {
-  display: inline-flex;
+  display: flex;
   align-items: center;
+  width: 100%;
   gap: 4px;
   padding: 4px;
   margin-bottom: 24px;
   background: var(--surface-1);
   border: 1px solid var(--border-medium);
   border-radius: var(--radius-md);
-  max-width: 100%;
   overflow-x: auto;
 }
 
 .home-tab {
   position: relative;
+  flex: 1 1 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   min-height: 38px;
-  padding: 8px 18px;
+  padding: 8px 12px;
   border-radius: var(--radius-sm);
   font-family: var(--font-display);
   font-size: 14px;
   font-weight: 600;
   color: var(--text-secondary);
+  text-align: center;
   white-space: nowrap;
-  flex-shrink: 0;
   transition:
     color var(--duration-fast) var(--ease-out),
     background-color var(--duration-fast) var(--ease-out);
