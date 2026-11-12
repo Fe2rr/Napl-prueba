@@ -223,7 +223,7 @@ function populateGameOptions(query = "") {
 function getMultiAppOptions(query = "") {
   const normalizedQuery = query.trim().toLocaleLowerCase();
   const candidates = ports.filter((port) =>
-    String(port.platform || "").trim().toLocaleLowerCase().replace(/\\s+/g, " ") === "multi-game apps" &&
+    ["multi-game apps", "multi game apps"].includes(String(port.platform || "").trim().toLocaleLowerCase().replace(/\s+/g, " ")) &&
     String(port.gameName || "").trim()
   );
 
