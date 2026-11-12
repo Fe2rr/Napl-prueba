@@ -1203,6 +1203,12 @@ export function displayGame(
                     if (avgDiff !== 0) return avgDiff;
                 }
 
+                // When ratings are equal (or neither port has votes),
+                // show the most recently updated port first.
+                const aUpdated = Date.parse(a.port.lastUpdate || "") || 0;
+                const bUpdated = Date.parse(b.port.lastUpdate || "") || 0;
+                if (aUpdated !== bUpdated) return bUpdated - aUpdated;
+
                 return a.originalIndex - b.originalIndex;
             });
 
