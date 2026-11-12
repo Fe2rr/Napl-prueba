@@ -207,7 +207,7 @@ export function createCategoryController(state) {
     }
 
     function normalizePlatformForFilter(value) {
-        return normalizeText(value).replace(/^nintendo\\s+/, "");
+        return normalizeText(value).replace(/^nintendo\s+/, "");
     }
 
     function displayFilteredGames() {
