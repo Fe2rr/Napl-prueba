@@ -1140,8 +1140,8 @@ async function handleAdminListPorts(request, env) {
     const denied = requireAdmin(request, env);
     if (denied) return denied;
     const [games, ports, platforms] = await Promise.all([
-        env.DB.prepare("SELECT slug, name, year, genre, description, cover_url, launchbox_url FROM games ORDER BY name COLLATE NOCASE").all(),
-        env.DB.prepare("SELECT p.*, g.name AS game_name, g.year AS game_year, g.genre AS game_genre, g.description AS game_description, g.cover_url AS game_cover_url, g.launchbox_url AS game_launchbox_url FROM ports p JOIN games g ON g.slug = p.game_slug ORDER BY g.name COLLATE NOCASE, p.platform COLLATE NOCASE, p.port_id").all(),
+        env.DB.prepare("SELECT g.slug, g.name, g.year, g.genre, g.description, g.cover_url, g.launchbox_url, COALESCE(v.visits, 0) AS visits FROM games g LEFT JOIN game_visit_totals v ON v.game_slug = g.slug ORDER BY g.name COLLATE NOCASE").all(),
+        env.DB.prepare("SELECT p.*, g.name AS game_name, g.year AS game_year, g.genre AS game_genre, g.description AS game_description, g.cover_url AS game_cover_url, g.launchbox_url AS game_launchbox_url, COALESCE(v.visits, 0) AS game_visits FROM ports p JOIN games g ON g.slug = p.game_slug LEFT JOIN game_visit_totals v ON v.game_slug = g.slug ORDER BY g.name COLLATE NOCASE, p.platform COLLATE NOCASE, p.port_id").all(),
         env.DB.prepare("SELECT name FROM platforms ORDER BY sort_order, name COLLATE NOCASE").all()
     ]);
     return jsonResponse({
@@ -1183,7 +1183,8 @@ async function handleAdminSavePort(request, env) {
     const game = {
         slug: gameSlug, name: gameName, year: clean(body.year, 20),
         genre: clean(body.genre, 120), description: clean(body.description, 4000),
-        coverUrl: clean(body.coverUrl, 1000), launchboxUrl: clean(body.launchboxUrl, 1000)
+        coverUrl: clean(body.coverUrl, 1000), launchboxUrl: clean(body.launchboxUrl, 1000),
+        visits: Math.max(0, Math.floor(Number(body.visits) || 0))
     };
     const port = {
         portId, platform, project: clean(body.project, 300), link: clean(body.link, 1000),
@@ -1213,6 +1214,8 @@ async function handleAdminSavePort(request, env) {
         env.DB.prepare("INSERT INTO games (slug, name, year, genre, description, cover_url, launchbox_url) VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT(slug) DO UPDATE SET name = excluded.name, year = excluded.year, genre = excluded.genre, description = excluded.description, cover_url = excluded.cover_url, launchbox_url = excluded.launchbox_url, updated_at = CURRENT_TIMESTAMP")
             .bind(game.slug, game.name, game.year, game.genre, game.description, game.coverUrl, game.launchboxUrl),
         env.DB.prepare("INSERT INTO platforms (name, sort_order) VALUES (?, 999) ON CONFLICT(name) DO NOTHING").bind(port.platform),
+        env.DB.prepare("INSERT INTO game_visit_totals (game_slug, game_name, visits, updated_at) VALUES (?, ?, ?, CURRENT_TIMESTAMP) ON CONFLICT(game_slug) DO UPDATE SET game_name = excluded.game_name, visits = excluded.visits, updated_at = CURRENT_TIMESTAMP")
+            .bind(game.slug, game.name, game.visits),
         env.DB.prepare("INSERT INTO ports (port_id, game_slug, platform, project, link, url, developer, version, last_update, date_added, needs_files, data_url, notes, works, controller_support, sort_order) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(game_slug, port_id) DO UPDATE SET platform = excluded.platform, project = excluded.project, link = excluded.link, url = excluded.url, developer = excluded.developer, version = excluded.version, last_update = excluded.last_update, date_added = CASE WHEN TRIM(COALESCE(ports.date_added, '')) <> '' THEN ports.date_added ELSE excluded.date_added END, needs_files = excluded.needs_files, data_url = excluded.data_url, notes = excluded.notes, controller_support = excluded.controller_support")
             .bind(port.portId, game.slug, port.platform, port.project, port.link, port.url, port.developer, port.version, port.lastUpdate, port.dateAdded, port.needsFiles, port.dataUrl, port.notes, "" , port.inputMethods, Number(sortRow?.next_order) || 0),
         env.DB.prepare("DELETE FROM port_developers WHERE game_slug = ? AND port_id = ?").bind(game.slug, port.portId),
