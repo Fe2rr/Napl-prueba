@@ -793,7 +793,7 @@ async function updateLaunchBoxData(env) {
         if (needsData && !unique.has(url)) unique.set(url, row);
     }
 
-    const candidates = Array.from(unique.entries()).slice(0, 300);
+    const candidates = Array.from(unique.entries());
     const errors = [];
     let updatedGames = 0;
     let filledFields = 0;
