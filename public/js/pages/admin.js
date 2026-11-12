@@ -571,7 +571,7 @@ function renderList() {
 }
 
 function openEditor(port = null) {
-  editing = port ? { gameSlug: port.gameSlug, portId: port.portId } : null;
+  editing = port ? { gameSlug: port.gameSlug, portId: port.portId, rowNumber: port.rowNumber } : null;
   originalLastUpdate = String(port?.lastUpdate || "").trim();
   form.reset();
   showMessage(formMessage, "");
@@ -670,7 +670,7 @@ deleteButton.addEventListener("click", async () => {
   try {
     await api("/admin/ports/delete", {
       method: "POST",
-      body: JSON.stringify({ gameSlug: editing.gameSlug, portId: editing.portId })
+      body: JSON.stringify({ gameSlug: editing.gameSlug, portId: editing.portId, rowNumber: editing.rowNumber })
     });
     const data = await api("/admin/ports/list");
     games = data.games || [];
@@ -723,6 +723,7 @@ form.addEventListener("submit", async (event) => {
       : enteredLastUpdate);
   payload.gameSlug = editing ? editing.gameSlug : selectedGameSlug;
   payload.originalPortId = editing ? editing.portId : "";
+  payload.rowNumber = editing ? editing.rowNumber : null;
   payload.isUnofficialPort = $("unofficial-port").checked;
   try {
     await api("/admin/ports/save", { method: "POST", body: JSON.stringify(payload) });
