@@ -83,18 +83,33 @@ const maintenanceStatus = $("maintenance-status");
 let maintenanceRunning = false;
 
 function summarizeMaintenance(action, data) {
-  const errors = Array.isArray(data.errors) ? data.errors.length : 0;
+  const errors = Array.isArray(data.errors) ? data.errors : [];
   const parts = [];
   if (action === "update-github-versions") {
     parts.push(`${data.updatedRows ?? 0} ports updated`, `${data.versionRows ?? 0} versions`, `${data.dateRows ?? 0} dates`);
+    parts.push(`${data.withoutVersion ?? 0} repos without releases/tags`);
   } else if (action === "update-developers") {
     parts.push(`${data.updatedRows ?? 0} developers completed`, `${data.scannedRows ?? 0} ports scanned`);
   } else if (action === "update-launchbox-data") {
     parts.push(`${data.updatedGames ?? 0} games updated`, `${data.filledFields ?? 0} fields completed`, `${data.candidates ?? 0} candidates`);
   } else if (action === "update-steam-data") {
     parts.push(`${data.completedGames ?? 0} games updated`, `${data.filledFields ?? 0} fields completed`, `${data.steamCandidates ?? 0} candidates`);
+    if (data.launchBoxLinksSkipped) parts.push(`${data.launchBoxLinksSkipped} LaunchBox links skipped`);
+    if (data.unrecognizedLinks) parts.push(`${data.unrecognizedLinks} unrecognized links`);
+    if (data.failedGames) parts.push(`${data.failedGames} failed`);
   }
-  if (errors) parts.push(`${errors} errors`);
+  if (errors.length) {
+    const grouped = new Map();
+    for (const item of errors) {
+      const reason = item.error || "unknown_error";
+      if (!grouped.has(reason)) grouped.set(reason, []);
+      grouped.get(reason).push(item.game || item.repository || item.slug || item.appId || "unknown");
+    }
+    for (const [reason, samples] of grouped) {
+      const preview = samples.slice(0, 3).join(", ");
+      parts.push(`${reason}: ${samples.length}${preview ? ` (${preview})` : ""}`);
+    }
+  }
   return parts.join(" · ");
 }
 
