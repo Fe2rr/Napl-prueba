@@ -32,6 +32,17 @@
         <button id="new-port-button" class="button primary" type="button">＋ Add port</button>
       </div>
 
+      <section class="panel maintenance-panel" aria-labelledby="maintenance-title">
+        <div class="maintenance-heading"><div><h2 id="maintenance-title">Data maintenance</h2><p class="muted">Run catalog metadata updates manually.</p></div></div>
+        <div class="maintenance-actions">
+          <button class="button secondary maintenance-button" type="button" data-maintenance-action="update-github-versions">Update GitHub releases</button>
+          <button class="button secondary maintenance-button" type="button" data-maintenance-action="update-developers">Complete developers</button>
+          <button class="button secondary maintenance-button" type="button" data-maintenance-action="update-launchbox-data">Complete LaunchBox data</button>
+          <button class="button secondary maintenance-button" type="button" data-maintenance-action="update-steam-data">Complete Steam data</button>
+        </div>
+        <p id="maintenance-status" class="message" role="status" aria-live="polite">Updates only fill empty fields, except GitHub releases, which refresh version and last update.</p>
+      </section>
+
       <section class="panel list-panel">
         <label for="search-input">Find a port</label>
         <input id="search-input" type="search" placeholder="Game, platform, port ID or developer…">
