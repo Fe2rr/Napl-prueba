@@ -83,3 +83,14 @@
  .admin-download-row{grid-template-columns:1fr}
  .admin-extra-grid{grid-template-columns:1fr}
 }
+
+
+/* Manual catalog maintenance */
+.maintenance-panel{margin-bottom:20px}
+.maintenance-heading h2{margin:0 0 5px}
+.maintenance-heading p{margin:0}
+.maintenance-actions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin-top:16px}
+.maintenance-button{min-height:42px;text-align:left}
+.maintenance-button:disabled{opacity:.55;cursor:wait}
+#maintenance-status{margin-top:14px}
+@media(max-width:620px){.maintenance-actions{grid-template-columns:1fr}}
