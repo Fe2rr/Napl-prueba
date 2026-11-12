@@ -1,3 +1,5 @@
+import { readSheetRows, updateSheetCells, buildCatalogFromSheet, sheetColumnName, writeSheetValues, deleteSheetRow } from "./sheets.js";
+
 /*
  * NAPL — CATALOG CLOUDFLARE WORKER
  *
@@ -44,64 +46,66 @@ function mapPortRow(row) {
 }
 
 async function handleGetCatalog(env) {
-    const [platformsResult, gamesResult, portsResult] = await Promise.all([
-        env.DB.prepare(
-            "SELECT name FROM platforms ORDER BY sort_order ASC, id ASC"
-        ).all(),
-        env.DB.prepare(
-            `SELECT slug, name, year, genre, description, cover_url, launchbox_url
-             FROM games
-             ORDER BY name COLLATE NOCASE ASC`
-        ).all(),
-        env.DB.prepare(
-            `SELECT p.*, g.name AS game_name, g.year AS game_year
-             FROM ports p
-             JOIN games g ON g.slug = p.game_slug
-             ORDER BY p.sort_order ASC, p.id ASC`
-        ).all(),
-    ]);
-
-    const gamesMap = new Map();
-
-    for (const g of gamesResult.results || []) {
-        gamesMap.set(g.slug, {
-            slug: g.slug,
-            name: g.name,
-            year: g.year || "",
-            genre: g.genre || "",
-            description: g.description || "",
-            coverUrl: g.cover_url || "",
-            launchboxUrl: g.launchbox_url || "",
-            platforms: [],
-            ports: [],
-        });
+    if (env.CATALOG_KV) {
+        const cached = await env.CATALOG_KV.get("catalog:v1");
+        if (cached) {
+            try {
+                return jsonResponse(JSON.parse(cached), 200, {
+                    "Cache-Control": "public, max-age=60, s-maxage=300"
+                });
+            } catch (error) {
+                console.error("Invalid catalog cache; falling back to D1:", error);
+            }
+        }
     }
 
+    // Transitional fallback until the Sheets catalog has been synchronized to KV.
+    const [platformsResult, gamesResult, portsResult] = await Promise.all([
+        env.DB.prepare("SELECT name FROM platforms ORDER BY sort_order ASC, id ASC").all(),
+        env.DB.prepare("SELECT slug, name, year, genre, description, cover_url, launchbox_url FROM games ORDER BY name COLLATE NOCASE ASC").all(),
+        env.DB.prepare("SELECT p.*, g.name AS game_name, g.year AS game_year FROM ports p JOIN games g ON g.slug = p.game_slug ORDER BY p.sort_order ASC, p.id ASC").all()
+    ]);
+    const gamesMap = new Map();
+    for (const g of gamesResult.results || []) {
+        gamesMap.set(g.slug, {
+            slug: g.slug, name: g.name, year: g.year || "", genre: g.genre || "",
+            description: g.description || "", coverUrl: g.cover_url || "",
+            launchboxUrl: g.launchbox_url || "", platforms: [], ports: []
+        });
+    }
     for (const p of portsResult.results || []) {
         const game = gamesMap.get(p.game_slug);
         if (!game) continue;
-
-        if (p.platform && !game.platforms.includes(p.platform)) {
-            game.platforms.push(p.platform);
-        }
-
+        if (p.platform && !game.platforms.includes(p.platform)) game.platforms.push(p.platform);
         game.ports.push(mapPortRow(p));
     }
+    return jsonResponse({
+        success: true,
+        platforms: (platformsResult.results || []).map((r) => r.name),
+        games: Array.from(gamesMap.values())
+    }, 200, { "Cache-Control": "public, max-age=60, s-maxage=300" });
+}
 
-    const platforms = (platformsResult.results || []).map((r) => r.name);
-    const games = Array.from(gamesMap.values());
-
-    return jsonResponse(
-        {
-            success: true,
-            platforms,
-            games,
-        },
-        200,
-        {
-            "Cache-Control": "public, max-age=120, s-maxage=300",
-        }
-    );
+async function handleSyncCatalogCache(request, env) {
+    const denied = requireAdmin(request, env);
+    if (denied) return denied;
+    if (!env.CATALOG_KV) {
+        return jsonResponse({ success: false, error: "CATALOG_KV is not bound. Create a KV namespace and bind it to this Worker as CATALOG_KV." }, 503);
+    }
+    const sheet = await readSheetRows(env);
+    const catalog = buildCatalogFromSheet(sheet);
+    if (!catalog.games.length) {
+        return jsonResponse({ success: false, error: "The Sheet did not produce any games; the existing cache was left unchanged." }, 422);
+    }
+    const updatedAt = new Date().toISOString();
+    await env.CATALOG_KV.put("catalog:v1", JSON.stringify({ ...catalog, updatedAt }));
+    return jsonResponse({
+        success: true,
+        games: catalog.games.length,
+        ports: catalog.games.reduce((total, game) => total + game.ports.length, 0),
+        platforms: catalog.platforms.length,
+        updatedAt
+    }, 200, { "Cache-Control": "no-store" });
 }
 
 async function handleGetGame(slug, env) {
@@ -587,19 +591,23 @@ async function resolveGitHubVersion(info, token) {
 }
 
 async function updateGitHubVersions(env, offset = 0) {
-    if (!env.GITHUB_TOKEN) throw new Error('GITHUB_TOKEN secret is not configured.');
-    const rowsResult = await env.DB.prepare("SELECT game_slug, port_id, url FROM ports WHERE url IS NOT NULL AND (LOWER(TRIM(url)) LIKE 'https://github.com/%' OR LOWER(TRIM(url)) LIKE 'http://github.com/%' OR LOWER(TRIM(url)) LIKE 'https://www.github.com/%' OR LOWER(TRIM(url)) LIKE 'http://www.github.com/%') ORDER BY game_slug, port_id").all();
-    const rows = rowsResult.results || [];
+    if (!env.GITHUB_TOKEN) throw new Error("GITHUB_TOKEN secret is not configured.");
+    const sheet = await readSheetRows(env);
+    const urlIndex = sheet.headerMap.get("URL");
+    const versionIndex = sheet.headerMap.get("VERSION");
+    const dateIndex = sheet.headerMap.get("LAST UPDATE");
+    if (urlIndex === undefined || versionIndex === undefined || dateIndex === undefined) {
+        throw new Error("The Sheet must contain URL, VERSION and LAST UPDATE columns.");
+    }
+
     const repoMap = new Map();
-    for (const row of rows) {
-        const info = normalizeGitHubRepo(row.url);
+    for (const item of sheet.rows) {
+        const info = normalizeGitHubRepo(item.values[urlIndex]);
         if (info && !repoMap.has(info.key)) repoMap.set(info.key, info);
     }
     const repos = Array.from(repoMap.values());
     const totalRepositories = repos.length;
     const startOffset = Math.max(0, Math.min(totalRepositories, Number.parseInt(offset, 10) || 0));
-    // A repository may require up to three GitHub requests (release, tags, repository).
-    // Keep each Worker invocation comfortably below the default subrequest limit.
     const batchSize = 12;
     const batch = repos.slice(startOffset, startOffset + batchSize);
     const resolved = await Promise.all(batch.map((info) => resolveGitHubVersion(info, env.GITHUB_TOKEN)));
@@ -608,33 +616,42 @@ async function updateGitHubVersions(env, offset = 0) {
     let withoutVersion = 0;
     for (const item of resolved) {
         if (item.version) results.set(item.key, item);
-        else if (item.error === 'no_release_or_tag') withoutVersion++;
-        else if (item.error) errors.push({ repository: item.key, error: item.error, detail: item.detail || '' });
+        else if (item.error === "no_release_or_tag") withoutVersion++;
+        else if (item.error) errors.push({ repository: item.key, error: item.error, detail: item.detail || "" });
     }
 
     const batchKeys = new Set(batch.map((info) => info.key));
-    const statements = [];
+    const updates = [];
     let updatedRows = 0;
     let versionRows = 0;
     let dateRows = 0;
-    for (const row of rows) {
-        const info = normalizeGitHubRepo(row.url);
+    for (const item of sheet.rows) {
+        const info = normalizeGitHubRepo(item.values[urlIndex]);
         if (!info || !batchKeys.has(info.key)) continue;
         const result = results.get(info.key);
         if (!result?.version) continue;
-        const assignments = ['version = ?'];
-        const values = [String(result.version)];
+
+        updates.push({
+            rowNumber: item.rowNumber,
+            column: sheetColumnName(versionIndex),
+            value: String(result.version)
+        });
         versionRows++;
         if (result.date) {
             const formattedDate = formatGitHubDate(result.date);
-            if (formattedDate) { assignments.push('last_update = ?'); values.push(formattedDate); dateRows++; }
+            if (formattedDate) {
+                updates.push({
+                    rowNumber: item.rowNumber,
+                    column: sheetColumnName(dateIndex),
+                    value: formattedDate
+                });
+                dateRows++;
+            }
         }
-        values.push(row.game_slug, row.port_id);
-        statements.push(env.DB.prepare('UPDATE ports SET ' + assignments.join(', ') + ' WHERE game_slug = ? AND port_id = ?').bind(...values));
         updatedRows++;
     }
-    for (let i = 0; i < statements.length; i += 50) await env.DB.batch(statements.slice(i, i + 50));
 
+    if (updates.length) await updateSheetCells(env, updates);
     const nextOffset = startOffset + batch.length;
     return {
         success: true,
@@ -663,36 +680,33 @@ async function handleUpdateGitHubVersions(request, env) {
 }
 
 async function updateDevelopers(env) {
-    const rowsResult = await env.DB.prepare(
-        "SELECT game_slug, port_id, url FROM ports WHERE url IS NOT NULL AND TRIM(url) <> '' AND TRIM(COALESCE(developer, '')) = ''"
-    ).all();
+    const sheet = await readSheetRows(env);
+    const urlIndex = sheet.headerMap.get("URL");
+    const developerIndex = sheet.headerMap.get("DEVELOPER");
+    if (urlIndex === undefined || developerIndex === undefined) {
+        throw new Error("The Sheet must contain URL and DEVELOPER columns.");
+    }
 
-    const statements = [];
-    let updatedRows = 0;
-    let uniqueDevelopers = new Set();
-
-    for (const row of rowsResult.results || []) {
-        const info = normalizeGitHubRepo(row.url);
+    const updates = [];
+    const developers = new Set();
+    for (const item of sheet.rows) {
+        const existing = String(item.values[developerIndex] || "").trim();
+        if (existing) continue;
+        const info = normalizeGitHubRepo(item.values[urlIndex]);
         if (!info) continue;
-
-        statements.push(
-            env.DB.prepare(
-                "UPDATE ports SET developer = ? WHERE game_slug = ? AND port_id = ? AND TRIM(COALESCE(developer, '')) = ''"
-            ).bind(info.owner, row.game_slug, row.port_id)
-        );
-        uniqueDevelopers.add(info.owner.toLowerCase());
-        updatedRows++;
+        updates.push({
+            rowNumber: item.rowNumber,
+            column: sheetColumnName(developerIndex),
+            value: info.owner
+        });
+        developers.add(info.owner.toLowerCase());
     }
-
-    for (let i = 0; i < statements.length; i += 50) {
-        await env.DB.batch(statements.slice(i, i + 50));
-    }
-
+    if (updates.length) await updateSheetCells(env, updates);
     return {
         success: true,
-        scannedRows: (rowsResult.results || []).length,
-        updatedRows,
-        uniqueDevelopers: uniqueDevelopers.size
+        scannedRows: sheet.rows.length,
+        updatedRows: updates.length,
+        uniqueDevelopers: developers.size
     };
 }
 
@@ -1181,29 +1195,94 @@ function requireAdmin(request, env) {
 async function handleAdminListPorts(request, env) {
     const denied = requireAdmin(request, env);
     if (denied) return denied;
-    const [games, ports, platforms] = await Promise.all([
-        env.DB.prepare("SELECT g.slug, g.name, g.year, g.genre, g.description, g.cover_url, g.launchbox_url, COALESCE(l.visits, 0) + COALESCE(v.visits, 0) AS visits FROM games g LEFT JOIN game_visit_legacy_totals l ON l.game_slug = g.slug LEFT JOIN (SELECT game_slug, COUNT(*) AS visits FROM game_visits GROUP BY game_slug) v ON v.game_slug = g.slug ORDER BY g.name COLLATE NOCASE").all(),
-        env.DB.prepare("SELECT p.*, g.name AS game_name, g.year AS game_year, g.genre AS game_genre, g.description AS game_description, g.cover_url AS game_cover_url, g.launchbox_url AS game_launchbox_url, COALESCE(l.visits, 0) + COALESCE(v.visits, 0) AS game_visits FROM ports p JOIN games g ON g.slug = p.game_slug LEFT JOIN game_visit_legacy_totals l ON l.game_slug = g.slug LEFT JOIN (SELECT game_slug, COUNT(*) AS visits FROM game_visits GROUP BY game_slug) v ON v.game_slug = g.slug ORDER BY g.name COLLATE NOCASE, p.platform COLLATE NOCASE, p.port_id").all(),
-        env.DB.prepare("SELECT name FROM platforms ORDER BY sort_order, name COLLATE NOCASE").all()
-    ]);
+    const sheet = await readSheetRows(env);
+    const slugify = (value) => importSlug(value);
+    const gamesMap = new Map();
+    const ports = [];
+    let currentGame = "";
+    let currentYear = "";
+    const portIds = new Set();
+
+    for (const item of sheet.rows) {
+        const row = item.object;
+        const read = (...names) => {
+            for (const name of names) {
+                const value = row[importNormalizeHeader(name)];
+                if (value !== undefined && String(value).trim() !== "") return String(value).trim();
+            }
+            return "";
+        };
+        if (read("GAME", "GAME NAME", "NAME", "JUEGO")) currentGame = read("GAME", "GAME NAME", "NAME", "JUEGO");
+        if (read("YEAR", "ANO", "AÑO")) currentYear = read("YEAR", "ANO", "AÑO");
+        if (!currentGame) continue;
+        const gameSlug = slugify(currentGame);
+        if (!gameSlug) continue;
+
+        const genre = read("GENRE", "GÉNERO", "GENERO");
+        const description = read("DESCRIPTION", "DESCRIPCIÓN", "DESCRIPCION");
+        const coverUrl = read("COVER_URL", "COVER URL", "COVER", "PORTADA");
+        const launchboxUrl = read("LAUNCHBOX_URL", "LAUNCHBOX URL");
+        if (!gamesMap.has(gameSlug)) {
+            gamesMap.set(gameSlug, {
+                slug: gameSlug, name: currentGame, year: currentYear, genre, description,
+                cover_url: coverUrl, launchbox_url: launchboxUrl, visits: 0
+            });
+        }
+        const portId = read("PORTS_ID", "PORT ID", "PORT_ID") || gameSlug + "-row-" + item.rowNumber;
+        const uniqueKey = gameSlug + "|" + portId;
+        if (portIds.has(uniqueKey)) {
+            return jsonResponse({ success: false, error: "Duplicate PORTS_ID detected for " + currentGame + ". Resolve duplicate IDs before editing the catalog." }, 409);
+        }
+        portIds.add(uniqueKey);
+        const hasData = ["PLATFORM","PROJECT","LINK","URL","DEVELOPER","VERSION","LAST UPDATE","DATE ADDED","NEEDS GAME FILES?","DATA URL","NOTES","WORKS?","CONTROLLER SUPPORT"]
+            .some((key) => read(key));
+        if (!hasData) continue;
+        ports.push({
+            rowNumber: item.rowNumber,
+            gameSlug, gameName: currentGame, year: currentYear, genre, description,
+            coverUrl, launchboxUrl, visits: 0,
+            portId, platform: read("PLATFORM"), project: read("PROJECT"), link: read("LINK"),
+            url: read("URL"), developer: read("DEVELOPER"), version: read("VERSION"),
+            lastUpdate: read("LAST UPDATE"), dateAdded: read("DATE ADDED"),
+            needsFiles: read("NEEDS GAME FILES?", "NEEDS GAME FILES"),
+            dataUrl: read("DATA URL"), notes: read("NOTES"),
+            inputMethods: read("CONTROLLER SUPPORT", "CONTROLLER", "GAMEPAD")
+        });
+    }
+
+    // Visits remain in D1 and are only loaded for the protected admin screen.
+    try {
+        const [legacy, recent] = await Promise.all([
+            env.DB.prepare("SELECT game_slug, visits FROM game_visit_legacy_totals").all(),
+            env.DB.prepare("SELECT game_slug, COUNT(*) AS visits FROM game_visits GROUP BY game_slug").all()
+        ]);
+        const totals = new Map();
+        for (const row of legacy.results || []) totals.set(row.game_slug, (totals.get(row.game_slug) || 0) + Number(row.visits || 0));
+        for (const row of recent.results || []) totals.set(row.game_slug, (totals.get(row.game_slug) || 0) + Number(row.visits || 0));
+        for (const game of gamesMap.values()) game.visits = totals.get(game.slug) || 0;
+        for (const port of ports) port.visits = totals.get(port.gameSlug) || 0;
+    } catch (error) {
+        console.warn("Admin visit totals could not be loaded:", error);
+    }
+
+    const platforms = [];
+    const seenPlatforms = new Set();
+    for (const port of ports) {
+        const key = port.platform.toLowerCase();
+        if (port.platform && !seenPlatforms.has(key)) {
+            seenPlatforms.add(key);
+            if (!["multi-game apps", "multi game apps"].includes(key)) platforms.push(port.platform);
+        }
+    }
     return jsonResponse({
         success: true,
-        games: games.results || [],
-        platforms: (platforms.results || []).map((p) => p.name),
-        ports: (ports.results || []).map((p) => ({
-            gameSlug: p.game_slug, gameName: p.game_name, year: p.game_year || "",
-            genre: p.game_genre || "", description: p.game_description || "",
-            coverUrl: p.game_cover_url || "", launchboxUrl: p.game_launchbox_url || "",
-            visits: Number(p.game_visits) || 0,
-            portId: p.port_id, platform: p.platform || "", project: p.project || "",
-            link: p.link || "", url: p.url || "", developer: p.developer || "",
-            version: p.version || "", lastUpdate: p.last_update || "",
-            dateAdded: p.date_added || "", needsFiles: p.needs_files || "",
-            dataUrl: p.data_url || "", notes: p.notes || "",
-            inputMethods: p.controller_support || ""
-        }))
+        games: Array.from(gamesMap.values()),
+        platforms,
+        ports
     }, 200, { "Cache-Control": "no-store" });
 }
+
+
 
 async function handleAdminSavePort(request, env) {
     const denied = requireAdmin(request, env);
@@ -1213,142 +1292,152 @@ async function handleAdminSavePort(request, env) {
 
     const clean = (value, max = 2000) => String(value ?? "").trim().slice(0, max);
     const gameName = clean(body.gameName, 180);
-    const requestedSlug = clean(body.gameSlug, 180);
-    const isNewGame = requestedSlug === "__new__";
-    const gameSlug = isNewGame ? importSlug(gameName) : requestedSlug;
-    let portId = clean(body.portId, 120);
+    const gameSlug = clean(body.gameSlug, 180);
+    const portId = clean(body.portId, 120);
     const originalPortId = clean(body.originalPortId, 120);
     const platform = clean(body.platform, 100);
-    if (!portId && originalPortId) portId = originalPortId;
-    if (!portId && gameSlug) {
-        const idPrefix = gameSlug.slice(0, 85) + (body.isUnofficialPort === true ? "-unofficial-port-" : "-port-");
-        let sequence = 1;
-        while (await env.DB.prepare("SELECT 1 AS found FROM ports WHERE game_slug = ? AND port_id = ?").bind(gameSlug, idPrefix + sequence).first()) {
-            sequence++;
-        }
-        portId = idPrefix + sequence;
-    }
     if (!gameName || !gameSlug || !portId || !platform) {
         return jsonResponse({ success: false, error: "Game name, game and platform are required." }, 400);
     }
 
-    const game = {
-        slug: gameSlug, name: gameName, year: clean(body.year, 20),
-        genre: clean(body.genre, 120), description: clean(body.description, 4000),
-        coverUrl: clean(body.coverUrl, 1000), launchboxUrl: clean(body.launchboxUrl, 1000),
-        visits: Math.max(0, Math.floor(Number(body.visits) || 0))
+    const sheet = await readSheetRows(env);
+    const headers = sheet.headers;
+    const indexOf = (...aliases) => {
+        for (const alias of aliases) {
+            const index = sheet.headerMap.get(importNormalizeHeader(alias));
+            if (index !== undefined) return index;
+        }
+        return -1;
     };
-    const port = {
-        portId, platform, project: clean(body.project, 300), link: clean(body.link, 1000),
-        url: clean(body.url, 1000), developer: clean(body.developer, 180),
-        version: clean(body.version, 100), lastUpdate: clean(body.lastUpdate, 100),
-        dateAdded: clean(body.dateAdded, 100) || new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString().slice(0, 19).replace('T', ' '), needsFiles: clean(body.needsFiles, 100),
-        dataUrl: clean(body.dataUrl, 1000), notes: clean(body.notes, 2000),
-        inputMethods: clean(body.inputMethods, 100)
+    const required = ["GAME","PORTS_ID","PLATFORM","PROJECT","LINK","URL","DEVELOPER","VERSION","LAST UPDATE"];
+    const missing = required.filter((key) => indexOf(key) < 0);
+    if (missing.length) return jsonResponse({ success: false, error: "Missing Sheet columns: " + missing.join(", ") }, 422);
+
+    const set = (values, aliases, value) => {
+        const index = indexOf(...aliases);
+        if (index >= 0) values[index] = String(value ?? "");
     };
-
-    const existingGame = await env.DB.prepare("SELECT slug FROM games WHERE slug = ?").bind(gameSlug).first();
-    if (!isNewGame && !existingGame) return jsonResponse({ success: false, error: "Selected game no longer exists. Reload the list." }, 409);
-    if (isNewGame && existingGame) return jsonResponse({ success: false, error: "A game with that name already exists. Select it from the game list instead." }, 409);
-    if (originalPortId && originalPortId !== portId) {
-        const conflictingPort = await env.DB.prepare("SELECT 1 AS found FROM ports WHERE game_slug = ? AND port_id = ?")
-            .bind(gameSlug, portId).first();
-        if (conflictingPort) return jsonResponse({ success: false, error: "That Port ID is already used by another port for this game." }, 409);
-    }
-    const sortRow = await env.DB.prepare("SELECT COALESCE(MAX(sort_order), -1) + 1 AS next_order FROM ports").first();
-
-    const statements = [];
-    if (originalPortId && originalPortId !== portId) {
-        statements.push(env.DB.prepare("DELETE FROM port_developers WHERE game_slug = ? AND port_id = ?").bind(gameSlug, originalPortId));
-        statements.push(env.DB.prepare("UPDATE ports SET port_id = ? WHERE game_slug = ? AND port_id = ?").bind(portId, gameSlug, originalPortId));
-    }
-    statements.push(
-        env.DB.prepare("INSERT INTO games (slug, name, year, genre, description, cover_url, launchbox_url) VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT(slug) DO UPDATE SET name = excluded.name, year = excluded.year, genre = excluded.genre, description = excluded.description, cover_url = excluded.cover_url, launchbox_url = excluded.launchbox_url, updated_at = CURRENT_TIMESTAMP")
-            .bind(game.slug, game.name, game.year, game.genre, game.description, game.coverUrl, game.launchboxUrl),
-        env.DB.prepare("INSERT INTO platforms (name, sort_order) VALUES (?, 999) ON CONFLICT(name) DO NOTHING").bind(port.platform),
-        env.DB.prepare("INSERT INTO game_visit_legacy_totals (game_slug, game_name, visits, imported_at) VALUES (?, ?, MAX(0, ? - COALESCE((SELECT COUNT(*) FROM game_visits WHERE game_slug = ?), 0)), CURRENT_TIMESTAMP) ON CONFLICT(game_slug) DO UPDATE SET game_name = excluded.game_name, visits = excluded.visits, imported_at = CURRENT_TIMESTAMP")
-            .bind(game.slug, game.name, game.visits, game.slug),
-        env.DB.prepare("INSERT INTO ports (port_id, game_slug, platform, project, link, url, developer, version, last_update, date_added, needs_files, data_url, notes, works, controller_support, sort_order) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(game_slug, port_id) DO UPDATE SET platform = excluded.platform, project = excluded.project, link = excluded.link, url = excluded.url, developer = excluded.developer, version = excluded.version, last_update = excluded.last_update, date_added = CASE WHEN TRIM(COALESCE(ports.date_added, '')) <> '' THEN ports.date_added ELSE excluded.date_added END, needs_files = excluded.needs_files, data_url = excluded.data_url, notes = excluded.notes, controller_support = excluded.controller_support")
-            .bind(port.portId, game.slug, port.platform, port.project, port.link, port.url, port.developer, port.version, port.lastUpdate, port.dateAdded, port.needsFiles, port.dataUrl, port.notes, "" , port.inputMethods, Number(sortRow?.next_order) || 0),
-        env.DB.prepare("DELETE FROM port_developers WHERE game_slug = ? AND port_id = ?").bind(game.slug, port.portId),
-        env.DB.prepare("DELETE FROM game_categories WHERE game_slug = ?").bind(game.slug)
-    );
-
-    if (port.developer) {
-        const developerSlug = importSlug(port.developer);
-        if (developerSlug) {
-            statements.push(env.DB.prepare("INSERT INTO developers (name, slug) VALUES (?, ?) ON CONFLICT(name) DO UPDATE SET slug = excluded.slug").bind(port.developer, developerSlug));
-            statements.push(env.DB.prepare("INSERT INTO port_developers (game_slug, port_id, developer_id) SELECT ?, ?, id FROM developers WHERE slug = ? ON CONFLICT(game_slug, port_id, developer_id) DO NOTHING").bind(game.slug, port.portId, developerSlug));
+    let currentGame = "";
+    let target = null;
+    let firstGameRow = null;
+    const groupRows = [];
+    for (const item of sheet.rows) {
+        const gameCell = String(item.values[indexOf("GAME")] || "").trim();
+        if (gameCell) currentGame = gameCell;
+        if (importSlug(currentGame) === gameSlug) {
+            groupRows.push(item);
+            if (!firstGameRow) firstGameRow = item;
+            const rowPortId = String(item.values[indexOf("PORTS_ID")] || "").trim();
+            if (rowPortId === (originalPortId || portId)) target = item;
         }
     }
-    if (game.genre) {
-        const categorySlug = importSlug(game.genre);
-        if (categorySlug) {
-            statements.push(env.DB.prepare("INSERT INTO categories (name, slug) VALUES (?, ?) ON CONFLICT(name) DO UPDATE SET slug = excluded.slug").bind(game.genre, categorySlug));
-            statements.push(env.DB.prepare("INSERT INTO game_categories (game_slug, category_id) SELECT ?, id FROM categories WHERE slug = ? ON CONFLICT(game_slug, category_id) DO NOTHING").bind(game.slug, categorySlug));
-        }
+    if (originalPortId && !target) {
+        return jsonResponse({ success: false, error: "Port not found in Google Sheets. Reload the list." }, 409);
     }
 
-    await env.DB.batch(statements);
-    return jsonResponse({ success: true, gameSlug: game.slug, portId: port.portId });
+    const makeValues = (source = []) => {
+        const values = [...source];
+        while (values.length < headers.length) values.push("");
+        return values.slice(0, headers.length);
+    };
+    const now = new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString().slice(0, 19).replace("T", " ");
+    const lastUpdate = clean(body.lastUpdate, 100);
+    const dateAdded = clean(body.dateAdded, 100) || now;
+    const gameValues = makeValues(firstGameRow?.values || []);
+    set(gameValues, ["GAME"], gameName);
+    set(gameValues, ["YEAR"], clean(body.year, 20));
+    set(gameValues, ["GENRE"], clean(body.genre, 120));
+    set(gameValues, ["DESCRIPTION"], clean(body.description, 4000));
+    set(gameValues, ["COVER_URL","COVER URL"], clean(body.coverUrl, 1000));
+    set(gameValues, ["LAUNCHBOX_URL","LAUNCHBOX URL"], clean(body.launchboxUrl, 1000));
+
+    const portValues = makeValues(target?.values || []);
+    set(portValues, ["GAME"], gameName);
+    set(portValues, ["YEAR"], clean(body.year, 20));
+    set(portValues, ["PORTS_ID"], portId);
+    set(portValues, ["PLATFORM"], platform);
+    set(portValues, ["PROJECT"], clean(body.project, 300));
+    set(portValues, ["LINK"], clean(body.link, 1000));
+    set(portValues, ["URL"], clean(body.url, 1000));
+    set(portValues, ["DEVELOPER"], clean(body.developer, 180));
+    set(portValues, ["VERSION"], clean(body.version, 100));
+    set(portValues, ["LAST UPDATE"], lastUpdate);
+    set(portValues, ["DATE ADDED"], dateAdded);
+    set(portValues, ["NEEDS GAME FILES?","NEEDS GAME FILES"], clean(body.needsFiles, 100));
+    set(portValues, ["DATA URL"], clean(body.dataUrl, 1000));
+    set(portValues, ["NOTES"], clean(body.notes, 2000));
+    set(portValues, ["CONTROLLER SUPPORT"], clean(body.inputMethods, 100));
+
+    const { tabName } = sheet;
+    const endColumn = sheetColumnName(headers.length - 1);
+    const quotedTab = "'" + tabName.replace(/'/g, "''") + "'";
+    if (target) {
+        const updates = [];
+        const firstValues = makeValues(firstGameRow.values);
+        if (firstGameRow.rowNumber === target.rowNumber) {
+            const merged = makeValues(portValues);
+            set(merged, ["GAME"], gameName);
+            set(merged, ["YEAR"], clean(body.year, 20));
+            set(merged, ["GENRE"], clean(body.genre, 120));
+            set(merged, ["DESCRIPTION"], clean(body.description, 4000));
+            set(merged, ["COVER_URL","COVER URL"], clean(body.coverUrl, 1000));
+            set(merged, ["LAUNCHBOX_URL","LAUNCHBOX URL"], clean(body.launchboxUrl, 1000));
+            await writeSheetValues(env, quotedTab + "!A" + target.rowNumber + ":" + endColumn + target.rowNumber, [merged]);
+        } else {
+            await writeSheetValues(env, quotedTab + "!A" + firstGameRow.rowNumber + ":" + endColumn + firstGameRow.rowNumber, [gameValues]);
+            await writeSheetValues(env, quotedTab + "!A" + target.rowNumber + ":" + endColumn + target.rowNumber, [portValues]);
+        }
+    } else {
+        if (groupRows.length) {
+            await writeSheetValues(env, quotedTab + "!A" + firstGameRow.rowNumber + ":" + endColumn + firstGameRow.rowNumber, [gameValues]);
+        }
+        set(portValues, ["GAME"], gameName);
+        await writeSheetValues(env, quotedTab + "!A:Z", [portValues], { append: true });
+    }
+
+    // Keep the public cache in sync immediately when KV is configured.
+    if (env.CATALOG_KV) {
+        const refreshed = await readSheetRows(env);
+        const catalog = buildCatalogFromSheet(refreshed);
+        await env.CATALOG_KV.put("catalog:v1", JSON.stringify({ ...catalog, updatedAt: new Date().toISOString() }));
+    }
+    return jsonResponse({ success: true, gameSlug, portId });
 }
+
+
 
 async function handleAdminDeletePort(request, env) {
     const denied = requireAdmin(request, env);
     if (denied) return denied;
-
     const body = await request.json().catch(() => null);
-    if (!body || typeof body !== "object") {
-        return jsonResponse({ success: false, error: "Invalid JSON body." }, 400);
-    }
+    if (!body || typeof body !== "object") return jsonResponse({ success: false, error: "Invalid JSON body." }, 400);
 
     const gameSlug = String(body.gameSlug || "").trim().slice(0, 180);
     const portId = String(body.portId || "").trim().slice(0, 120);
-    if (!gameSlug || !portId) {
-        return jsonResponse({ success: false, error: "gameSlug and portId are required." }, 400);
+    if (!gameSlug || !portId) return jsonResponse({ success: false, error: "gameSlug and portId are required." }, 400);
+
+    const sheet = await readSheetRows(env);
+    const gameIndex = sheet.headerMap.get("GAME");
+    const portIndex = sheet.headerMap.get("PORTS_ID");
+    let currentGame = "";
+    const target = sheet.rows.find((item) => {
+        const name = String(item.values[gameIndex] || "").trim();
+        if (name) currentGame = name;
+        return importSlug(currentGame) === gameSlug &&
+            String(item.values[portIndex] || "").trim() === portId;
+    });
+    if (!target) return jsonResponse({ success: false, error: "Port not found in Google Sheets. Reload the catalog." }, 404);
+
+    await deleteSheetRow(env, target.rowNumber);
+    if (env.CATALOG_KV) {
+        const refreshed = await readSheetRows(env);
+        const catalog = buildCatalogFromSheet(refreshed);
+        await env.CATALOG_KV.put("catalog:v1", JSON.stringify({ ...catalog, updatedAt: new Date().toISOString() }));
     }
-
-    const existing = await env.DB.prepare(
-        "SELECT port_id FROM ports WHERE game_slug = ? AND port_id = ?"
-    ).bind(gameSlug, portId).first();
-
-    if (!existing) {
-        return jsonResponse({ success: false, error: "Port not found. Reload the catalog and try again." }, 404);
-    }
-
-    // Remove the selected port. If it was the game's final port, remove
-    // the now-empty game and its game-level catalog/visit records as well.
-    // This table is created only when the optional visit-history import is run.
-    // Check for it first so deleting a port also works on databases without that import.
-    const dailyTotalsTable = await env.DB.prepare(
-        "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'game_visit_daily_totals'"
-    ).first();
-
-    const statements = [
-        env.DB.prepare("DELETE FROM port_developers WHERE game_slug = ? AND port_id = ?")
-            .bind(gameSlug, portId),
-        env.DB.prepare("DELETE FROM ports WHERE game_slug = ? AND port_id = ?")
-            .bind(gameSlug, portId),
-        env.DB.prepare("DELETE FROM games WHERE slug = ? AND NOT EXISTS (SELECT 1 FROM ports WHERE game_slug = ?)")
-            .bind(gameSlug, gameSlug),
-        env.DB.prepare("DELETE FROM game_visit_totals WHERE game_slug = ? AND NOT EXISTS (SELECT 1 FROM ports WHERE game_slug = ?)")
-            .bind(gameSlug, gameSlug),
-        env.DB.prepare("DELETE FROM game_visits WHERE game_slug = ? AND NOT EXISTS (SELECT 1 FROM ports WHERE game_slug = ?)")
-            .bind(gameSlug, gameSlug)
-    ];
-
-    if (dailyTotalsTable) {
-        statements.push(
-            env.DB.prepare("DELETE FROM game_visit_daily_totals WHERE game_slug = ? AND NOT EXISTS (SELECT 1 FROM ports WHERE game_slug = ?)")
-                .bind(gameSlug, gameSlug)
-        );
-    }
-
-    const results = await env.DB.batch(statements);
-    const gameDeleted = Number(results[2]?.meta?.changes || 0) > 0;
-
-    return jsonResponse({ success: true, gameSlug, portId, gameDeleted });
+    return jsonResponse({ success: true, gameSlug, portId, gameDeleted: false });
 }
+
+
 
 // -----------------------------------------------------------------------------
 // Protected one-time migration from the published Google Sheets CSV.
@@ -2049,14 +2138,40 @@ document.getElementById("f").addEventListener("submit", async function(e) {
     return new Response(html, { headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" } });
 }
 
+async function runScheduledGitHubSync(env) {
+    if (!env.GITHUB_TOKEN || !env.SHEETS_SERVICE_ACCOUNT_EMAIL || !env.SHEETS_SERVICE_ACCOUNT_PRIVATE_KEY) return;
+    await env.DB.prepare(`CREATE TABLE IF NOT EXISTS github_sync_state (
+        state_key TEXT PRIMARY KEY,
+        next_offset INTEGER NOT NULL DEFAULT 0,
+        updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )`).run();
+    await env.DB.prepare("INSERT OR IGNORE INTO github_sync_state (state_key, next_offset) VALUES ('catalog', 0)").run();
+    const state = await env.DB.prepare("SELECT next_offset FROM github_sync_state WHERE state_key = 'catalog'").first();
+    const offset = Math.max(0, Number(state?.next_offset) || 0);
+    const result = await updateGitHubVersions(env, offset);
+    const nextOffset = result.complete ? 0 : result.nextOffset;
+    await env.DB.prepare("UPDATE github_sync_state SET next_offset = ?, updated_at = CURRENT_TIMESTAMP WHERE state_key = 'catalog'").bind(nextOffset).run();
+    console.log("Scheduled GitHub sync:", JSON.stringify({
+        offset, nextOffset, complete: result.complete,
+        processedRepositories: result.processedRepositories,
+        uniqueRepositories: result.uniqueRepositories,
+        errors: result.errors.length
+    }));
+}
+
+async function refreshCatalogCache(env) {
+    if (!env.CATALOG_KV || !env.SHEETS_SERVICE_ACCOUNT_EMAIL || !env.SHEETS_SERVICE_ACCOUNT_PRIVATE_KEY) return;
+    const sheet = await readSheetRows(env);
+    const catalog = buildCatalogFromSheet(sheet);
+    if (!catalog.games.length) throw new Error("Sheet catalog is empty; keeping previous KV value.");
+    await env.CATALOG_KV.put("catalog:v1", JSON.stringify({ ...catalog, updatedAt: new Date().toISOString() }));
+}
+
 export default {
     async scheduled(controller, env, ctx) {
         ctx.waitUntil(Promise.allSettled([
-            registerMissingPortDates(env),
-            updateGitHubVersions(env),
-            updateDevelopers(env),
-            updateLaunchBoxData(env),
-            updateSteamGameData(env)
+            runScheduledGitHubSync(env),
+            refreshCatalogCache(env)
         ]));
     },
 
@@ -2141,6 +2256,10 @@ export default {
 
             if (request.method === "GET" && path === "/catalog") {
                 return await handleGetCatalog(env);
+            }
+
+            if (request.method === "POST" && path === "/admin/sync-catalog-cache") {
+                return await handleSyncCatalogCache(request, env);
             }
 
             if (request.method === "GET" && path.startsWith("/games/")) {
