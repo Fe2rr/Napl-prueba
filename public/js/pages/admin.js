@@ -34,7 +34,7 @@ const fields = {
   url: "port-url", developer: "developer", version: "version",
   lastUpdate: "last-update", dateAdded: "date-added", needsFiles: "needs-files",
   dataUrl: "data-url", notes: "notes", works: "works",
-  controllerSupport: "controller-support"
+  controllerSupport: "input-methods"
 };
 
 function value(id) { return $(id).value.trim(); }
@@ -106,17 +106,33 @@ function populateGameOptions(query = "") {
   }));
 }
 
-function populateOptions(selectedName = "") {
-  populateGameOptions(selectedName);
-  gameSearch.value = selectedName;
-  const availablePlatforms = [...new Set(ports.map((p) => p.platform).filter(Boolean))];
-  const ordered = [...platformOrder, ...availablePlatforms.filter((p) => !platformOrder.includes(p))];
-  const platforms = ordered.filter((p, index) => availablePlatforms.includes(p) && ordered.indexOf(p) === index);
-  platformOptions.replaceChildren(...platforms.map((platform) => {
+function populatePlatformOptions(query = "") {
+  const normalizedQuery = query.trim().toLocaleLowerCase();
+  const availablePlatforms = [...new Set([...platformOrder, ...ports.map((p) => p.platform).filter(Boolean)])];
+  const matches = availablePlatforms
+    .filter((platform) => !normalizedQuery || platform.toLocaleLowerCase().includes(normalizedQuery))
+    .sort((a, b) => {
+      const aName = a.toLocaleLowerCase();
+      const bName = b.toLocaleLowerCase();
+      const aStarts = aName.startsWith(normalizedQuery);
+      const bStarts = bName.startsWith(normalizedQuery);
+      if (aStarts !== bStarts) return aStarts ? -1 : 1;
+      return aName.localeCompare(bName);
+    })
+    .slice(0, 5);
+
+  platformOptions.replaceChildren(...matches.map((platform) => {
     const option = document.createElement("option");
     option.value = platform;
     return option;
   }));
+}
+
+function populateOptions(selectedName = "", selectedPlatform = "") {
+  populateGameOptions(selectedName);
+  gameSearch.value = selectedName;
+  $("platform").value = selectedPlatform;
+  populatePlatformOptions(selectedPlatform);
 }
 
 function getDownloadLabel(port) {
@@ -253,7 +269,7 @@ function openEditor(port = null) {
   showMessage(formMessage, "");
   $("editor-title").textContent = port ? "Edit port" : "Add port";
   saveButton.textContent = port ? "Save changes" : "Add port";
-  populateOptions(port?.gameName || "");
+  populateOptions(port?.gameName || "", port?.platform || "");
   selectedGameSlug = port?.gameSlug || "__new__";
 
   if (port) {
@@ -300,6 +316,8 @@ function updateGameSelection() {
 
 gameSearch.addEventListener("input", updateGameSelection);
 gameSearch.addEventListener("change", updateGameSelection);
+$("platform").addEventListener("input", () => populatePlatformOptions(value("platform")));
+$("platform").addEventListener("change", () => populatePlatformOptions(value("platform")));
 $("new-port-button").addEventListener("click", () => openEditor());
 $("cancel-edit").addEventListener("click", () => { editor.hidden = true; editing = null; });
 searchInput.addEventListener("input", renderList);
