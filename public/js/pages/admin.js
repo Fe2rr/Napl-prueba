@@ -29,7 +29,7 @@ let selectedGameSlug = "__new__";
 
 const fields = {
   gameName: "game-name", year: "game-year", genre: "game-genre",
-  description: "game-description", coverUrl: "cover-url", launchboxUrl: "launchbox-url",
+  description: "game-description", coverUrl: "cover-url", launchboxUrl: "launchbox-url", visits: "visits",
   portId: "port-id", platform: "platform", project: "project", link: "link",
   url: "port-url", developer: "developer", version: "version",
   lastUpdate: "last-update", dateAdded: "date-added", needsFiles: "needs-files",
