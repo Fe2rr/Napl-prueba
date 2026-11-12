@@ -191,7 +191,10 @@ async function loadPopular(period = state.selectedPopularPeriod) {
 
         const ranking = rawGames
             .map((item) => {
-                const game = gameMap.get(createSlug(item.game));
+                // Prefer the API slug when available; fall back to the game name.
+                const apiSlug = createSlug(item.slug || "");
+                const gameSlug = createSlug(item.game || "");
+                const game = gameMap.get(apiSlug) || gameMap.get(gameSlug);
                 if (!game) return null;
                 return {
                     game,
