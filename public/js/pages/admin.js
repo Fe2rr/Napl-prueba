@@ -102,12 +102,15 @@ function summarizeMaintenance(action, data) {
     const grouped = new Map();
     for (const item of errors) {
       const reason = item.error || "unknown_error";
-      if (!grouped.has(reason)) grouped.set(reason, []);
-      grouped.get(reason).push(item.game || item.repository || item.slug || item.appId || "unknown");
+      if (!grouped.has(reason)) grouped.set(reason, { samples: [], detail: "" });
+      const group = grouped.get(reason);
+      group.samples.push(item.game || item.repository || item.slug || item.appId || "unknown");
+      if (!group.detail && item.detail) group.detail = item.detail;
     }
-    for (const [reason, samples] of grouped) {
-      const preview = samples.slice(0, 3).join(", ");
-      parts.push(`${reason}: ${samples.length}${preview ? ` (${preview})` : ""}`);
+    for (const [reason, group] of grouped) {
+      const preview = group.samples.slice(0, 3).join(", ");
+      const detail = group.detail ? " — " + group.detail : "";
+      parts.push(reason + ": " + group.samples.length + (preview ? " (" + preview + ")" : "") + detail);
     }
   }
   return parts.join(" · ");
