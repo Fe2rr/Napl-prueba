@@ -1268,6 +1268,41 @@ async function handleAdminSavePort(request, env) {
     return jsonResponse({ success: true, gameSlug: game.slug, portId: port.portId });
 }
 
+async function handleAdminDeletePort(request, env) {
+    const denied = requireAdmin(request, env);
+    if (denied) return denied;
+
+    const body = await request.json().catch(() => null);
+    if (!body || typeof body !== "object") {
+        return jsonResponse({ success: false, error: "Invalid JSON body." }, 400);
+    }
+
+    const gameSlug = String(body.gameSlug || "").trim().slice(0, 180);
+    const portId = String(body.portId || "").trim().slice(0, 120);
+    if (!gameSlug || !portId) {
+        return jsonResponse({ success: false, error: "gameSlug and portId are required." }, 400);
+    }
+
+    const existing = await env.DB.prepare(
+        "SELECT port_id FROM ports WHERE game_slug = ? AND port_id = ?"
+    ).bind(gameSlug, portId).first();
+
+    if (!existing) {
+        return jsonResponse({ success: false, error: "Port not found. Reload the catalog and try again." }, 404);
+    }
+
+    // Delete only the selected port and its developer association.
+    // The game, sibling ports, visits, ratings and other catalog data are untouched.
+    await env.DB.batch([
+        env.DB.prepare("DELETE FROM port_developers WHERE game_slug = ? AND port_id = ?")
+            .bind(gameSlug, portId),
+        env.DB.prepare("DELETE FROM ports WHERE game_slug = ? AND port_id = ?")
+            .bind(gameSlug, portId)
+    ]);
+
+    return jsonResponse({ success: true, gameSlug, portId });
+}
+
 // -----------------------------------------------------------------------------
 // Protected one-time migration from the published Google Sheets CSV.
 // Configure IMPORT_SECRET as a Worker secret before using POST /admin/import-sheet.
@@ -1992,6 +2027,9 @@ export default {
             }
             if (request.method === "POST" && path === "/admin/ports/save") {
                 return await handleAdminSavePort(request, env);
+            }
+            if (request.method === "POST" && path === "/admin/ports/delete") {
+                return await handleAdminDeletePort(request, env);
             }
 
             if (request.method === "GET" && path === "/admin/import-devices") {
