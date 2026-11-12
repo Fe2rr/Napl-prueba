@@ -27,7 +27,7 @@ function parseLastUpdate(value) {
     if (!raw) return 0;
 
     // D1 stores timestamps as Montevideo local time without a timezone suffix.
-    const localMatch = raw.match(/^(\\d{4}-\\d{2}-\\d{2})[ T](\\d{2}:\\d{2}(?::\\d{2})?)$/);
+    const localMatch = raw.match(/^(\d{4}-\d{2}-\d{2})[ T](\d{2}:\d{2}(?::\d{2})?)$/);
     if (localMatch) {
         const time = localMatch[2].length === 5 ? `${localMatch[2]}:00` : localMatch[2];
         const timestamp = Date.parse(`${localMatch[1]}T${time}-03:00`);
