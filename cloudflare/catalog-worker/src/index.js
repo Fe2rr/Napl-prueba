@@ -1139,13 +1139,15 @@ function requireAdmin(request, env) {
 async function handleAdminListPorts(request, env) {
     const denied = requireAdmin(request, env);
     if (denied) return denied;
-    const [games, ports] = await Promise.all([
+    const [games, ports, platforms] = await Promise.all([
         env.DB.prepare("SELECT slug, name, year, genre, description, cover_url, launchbox_url FROM games ORDER BY name COLLATE NOCASE").all(),
-        env.DB.prepare("SELECT p.*, g.name AS game_name, g.year AS game_year, g.genre AS game_genre, g.description AS game_description, g.cover_url AS game_cover_url, g.launchbox_url AS game_launchbox_url FROM ports p JOIN games g ON g.slug = p.game_slug ORDER BY g.name COLLATE NOCASE, p.platform COLLATE NOCASE, p.port_id").all()
+        env.DB.prepare("SELECT p.*, g.name AS game_name, g.year AS game_year, g.genre AS game_genre, g.description AS game_description, g.cover_url AS game_cover_url, g.launchbox_url AS game_launchbox_url FROM ports p JOIN games g ON g.slug = p.game_slug ORDER BY g.name COLLATE NOCASE, p.platform COLLATE NOCASE, p.port_id").all(),
+        env.DB.prepare("SELECT name FROM platforms ORDER BY sort_order, name COLLATE NOCASE").all()
     ]);
     return jsonResponse({
         success: true,
         games: games.results || [],
+        platforms: (platforms.results || []).map((p) => p.name),
         ports: (ports.results || []).map((p) => ({
             gameSlug: p.game_slug, gameName: p.game_name, year: p.game_year || "",
             genre: p.game_genre || "", description: p.game_description || "",
