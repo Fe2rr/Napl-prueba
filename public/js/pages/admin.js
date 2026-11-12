@@ -115,11 +115,8 @@ function summarizeMaintenance(action, data) {
     parts.push(`${data.updatedRows ?? 0} developers completed`, `${data.scannedRows ?? 0} ports scanned`);
   } else if (action === "update-launchbox-data") {
     parts.push(`${data.updatedGames ?? 0} games updated`, `${data.filledFields ?? 0} fields completed`, `${data.candidates ?? 0} candidates`);
-  } else if (action === "update-steam-data") {
-    parts.push(`${data.completedGames ?? 0} games updated`, `${data.filledFields ?? 0} fields completed`, `${data.steamCandidates ?? 0} candidates`);
-    if (data.launchBoxLinksSkipped) parts.push(`${data.launchBoxLinksSkipped} LaunchBox links skipped`);
-    if (data.unrecognizedLinks) parts.push(`${data.unrecognizedLinks} unrecognized links`);
-    if (data.failedGames) parts.push(`${data.failedGames} failed`);
+  } else if (action === "sync-catalog-cache") {
+    parts.push(`${data.games ?? 0} games`, `${data.ports ?? 0} ports`, `${data.platforms ?? 0} platforms cached`);
   }
   if (errors.length) {
     const grouped = new Map();
