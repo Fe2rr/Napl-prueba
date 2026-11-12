@@ -359,10 +359,10 @@ function renderList() {
     const isOthersPlatform = ["other", "others"].includes(normalizePlatform(platform));
     const getSource = (port) => {
       const sourceText = [port.url, port.link, port.project].filter(Boolean).join(" ").toLowerCase();
-      if (/github\\.com|github\\.io/.test(sourceText)) return "GitHub";
-      if (/\\b(t\\.me|telegram\\.me|telegram\\.org)\\b/.test(sourceText)) return "Telegram";
-      if (/\\b(discord\\.gg|discord\\.com|discordapp\\.com)\\b/.test(sourceText)) return "Discord";
-      if (/\\bitch\\.io\\b/.test(sourceText)) return "itch.io";
+      if (/github\.com|github\.io/.test(sourceText)) return "GitHub";
+      if (/\b(t\.me|telegram\.me|telegram\.org)\b/.test(sourceText)) return "Telegram";
+      if (/\b(discord\.gg|discord\.com|discordapp\.com)\b/.test(sourceText)) return "Discord";
+      if (/\bitch\.io\b/.test(sourceText)) return "itch.io";
       return "Other sources";
     };
     const compareDeveloper = (a, b) =>
