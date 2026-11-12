@@ -219,9 +219,9 @@ function openEditor(port = null) {
   if (port) {
     for (const [key] of Object.entries(fields)) setValue(key, port[key]);
     gameSearch.disabled = true;
-    $("game-name").readOnly = true;
-    $("port-id").readOnly = true;
-    gameSelectionHint.textContent = "Editing the game linked to this port.";
+    $("game-name").readOnly = false;
+    $("port-id").readOnly = false;
+    gameSelectionHint.textContent = "You can edit the game name and Port ID. The game remains linked to its existing record.";
   } else {
     gameSearch.disabled = false;
     $("game-name").readOnly = false;
@@ -288,6 +288,7 @@ form.addEventListener("submit", async (event) => {
   const payload = {};
   for (const [key, id] of Object.entries(fields)) payload[key] = value(id);
   payload.gameSlug = editing ? editing.gameSlug : selectedGameSlug;
+  payload.originalPortId = editing ? editing.portId : "";
   try {
     await api("/admin/ports/save", { method: "POST", body: JSON.stringify(payload) });
     const data = await api("/admin/ports/list");
