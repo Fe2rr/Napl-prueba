@@ -15,7 +15,7 @@ const editor = $("editor-panel");
 const form = $("port-form");
 const formMessage = $("form-message");
 const saveButton = $("save-button");
-const gameSearch = $("game-search");
+const gameSearch = $("game-name");
 const gameSuggestions = $("game-suggestions");
 const gameSelectionHint = $("game-selection-hint");
 const platformSelect = $("platform-select");
@@ -287,10 +287,11 @@ function openEditor(port = null) {
   if (port) {
     for (const [key] of Object.entries(fields)) setValue(key, port[key]);
     $("unofficial-port").checked = /-unofficial-port(?:-\d+)?$/i.test(port.portId || "");
-    gameSearch.disabled = true;
+    gameSearch.disabled = false;
     $("game-name").readOnly = false;
+    gameSuggestions.hidden = true;
     $("port-id").readOnly = false;
-    gameSelectionHint.textContent = "You can edit the game name and Port ID. The game remains linked to its existing record.";
+    gameSelectionHint.textContent = "Edit the game name if needed. The port remains linked to this game record.";
   } else {
     gameSearch.disabled = false;
     $("game-name").readOnly = false;
