@@ -108,7 +108,7 @@ function displayLastAdded() {
 
     const fragment = document.createDocumentFragment();
     for (const item of visibleGames) {
-        fragment.appendChild(createHomeGameCard(item.game, item.port));
+        fragment.appendChild(createHomeGameCard(item.game, item.port, { returnUrl: "index.html?view=last-added" }));
     }
 
     lastAddedList.appendChild(fragment);
@@ -142,7 +142,7 @@ function displayLastUpdated() {
 
     const fragment = document.createDocumentFragment();
     for (const item of visibleGames) {
-        fragment.appendChild(createHomeGameCard(item.game, item.port));
+        fragment.appendChild(createHomeGameCard(item.game, item.port, { returnUrl: "index.html?view=last-updated" }));
     }
 
     lastUpdatedList.appendChild(fragment);
@@ -172,6 +172,7 @@ function displayPopular(ranking) {
             createHomeGameCard(item.game, item.port, {
                 rank: i + 1,
                 showPort: false,
+                returnUrl: `index.html?view=popular&period=${encodeURIComponent(state.selectedPopularPeriod)}`,
             })
         );
     }
@@ -279,6 +280,20 @@ function applyInitialRouteFromUrl() {
 
     if (view === "all-games") {
         openCategory("all-games");
+        return;
+    }
+
+    if (view === "last-added" || view === "last-updated" || view === "popular") {
+        showHomeSection(view);
+        if (view === "popular" && params.get("period")) {
+            state.selectedPopularPeriod = params.get("period");
+            popularTabs.forEach((tab) => {
+                const active = tab.dataset.period === state.selectedPopularPeriod;
+                tab.classList.toggle("active", active);
+                tab.setAttribute("aria-pressed", String(active));
+            });
+            loadPopular(state.selectedPopularPeriod);
+        }
         return;
     }
 
