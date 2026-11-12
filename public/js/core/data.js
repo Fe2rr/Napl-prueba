@@ -316,6 +316,44 @@ export async function loadCatalog(force = false) {
         const games = groupGames(allRows);
         const platformOrder = extractPlatformOrder(rows);
 
+        // Temporary diagnostics: inspect where catalog entries may be lost.
+        const countBy = (items, getValue) => {
+            const counts = new Map();
+            for (const item of items) {
+                const value = String(getValue(item) || "").trim();
+                if (!value) continue;
+                counts.set(value, (counts.get(value) || 0) + 1);
+            }
+            return Object.fromEntries(
+                [...counts.entries()].sort((a, b) => a[0].localeCompare(b[0]))
+            );
+        };
+
+        const dualScreenPorts = allRows.filter((port) =>
+            normalizeText(port.project).includes("dual screen")
+        );
+
+        console.groupCollapsed("[NAPL] Catalog diagnostics");
+        console.log("CSV characters:", csv.length);
+        console.log("Parsed CSV rows:", rows.length);
+        console.log("Processed port rows:", allRows.length);
+        console.log("Grouped games:", games.length);
+        console.log("Rows discarded during processing:", rows.length - allRows.length);
+        console.log("Platforms in raw CSV:", countBy(rows, (row) =>
+            getColumn(row, ["PLATFORM", "PLATAFORM", "PLATAFORMA"])
+        ));
+        console.log("Platforms in processed ports:", countBy(allRows, (port) => port.platform));
+        console.log("Dual Screen ports:", dualScreenPorts.length);
+        console.log("Games with Dual Screen:", new Set(dualScreenPorts.map((port) =>
+            normalizeText(port.game)
+        )).size);
+        console.log("Dual Screen project examples:", dualScreenPorts.slice(0, 10).map((port) => ({
+            game: port.game,
+            platform: port.platform,
+            project: port.project
+        })));
+        console.groupEnd();
+
         if (!games.length) {
             throw new Error("The Community Ports sheet contains no games.");
         }
