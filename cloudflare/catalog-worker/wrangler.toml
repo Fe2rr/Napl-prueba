@@ -3,7 +3,7 @@ main = "src/index.js"
 compatibility_date = "2025-01-01"
 
 [triggers]
-crons = ["0 * * * *"]
+crons = ["*/15 * * * *"]
 
 # Main catalog: games, ports, platforms, developers, categories and visits.
 [[d1_databases]]
@@ -16,3 +16,8 @@ database_id = "2bf13a98-e87c-4ba9-9298-206b578af02b"
 binding = "DEVICES_DB"
 database_name = "napl-devices-db"
 database_id = "6a356f65-88d7-4b0b-99cb-63bf551d99b1"
+
+# Create a KV namespace in Cloudflare and add its ID here before enabling the public catalog cache:
+# [[kv_namespaces]]
+# binding = "CATALOG_KV"
+# id = "YOUR_KV_NAMESPACE_ID"
