@@ -16,15 +16,11 @@ export function isDualScreen(game) {
         return false;
     }
 
-    return game.ports.some((port) => {
-        const project = normalizeText(port?.project);
-        const platform = normalizeText(port?.platform);
-
-        return (
-            project.includes("dual screen") ||
-            platform.includes("dual screen")
-        );
-    });
+    // Keep the same rule as the working V3 implementation:
+    // Dual Screen is identified by the PROJECT column.
+    return game.ports.some((port) =>
+        normalizeText(port?.project).includes("dual screen")
+    );
 }
 
 export function isMultiGameApp(game) {
