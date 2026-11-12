@@ -76,6 +76,9 @@
 /* Game Card — Detailed List */
 .home-game {
   display: flex;
+  min-width: 0;
+  max-width: 100%;
+  box-sizing: border-box;
   align-items: center;
   gap: 14px;
   padding: 12px 14px;
@@ -177,6 +180,9 @@
 
 /* Multi-Game Apps */
 .game {
+  min-width: 0;
+  max-width: 100%;
+  box-sizing: border-box;
   padding: 16px;
   background: var(--surface-1);
   border: 1px solid var(--border-subtle);
@@ -228,6 +234,8 @@
 }
 
 .games-using-app-item {
+  min-width: 0;
+  overflow-wrap: anywhere;
   padding: 6px 10px;
   border-radius: 6px;
   font-size: 13px;
