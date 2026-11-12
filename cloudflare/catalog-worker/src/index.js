@@ -3,8 +3,8 @@ import { readSheetRows, updateSheetCells, buildCatalogFromSheet, sheetColumnName
 /*
  * NAPL — CATALOG CLOUDFLARE WORKER
  *
- * Serves games, ports and platforms from a dedicated D1 database
- * (completely separate from the votes/ratings Worker & DB).
+ * Google Sheets is the catalog source of truth. Cloudflare KV serves the
+ * public catalog cache; D1 remains for community activity and legacy fallback.
  */
 
 const CORS_HEADERS = {
@@ -112,6 +112,22 @@ async function handleGetGame(slug, env) {
     const cleanSlug = decodeURIComponent(slug || "").trim().toLowerCase();
     if (!cleanSlug) {
         return jsonResponse({ success: false, error: "Missing game slug." }, 400);
+    }
+
+    if (env.CATALOG_KV) {
+        const cached = await env.CATALOG_KV.get("catalog:v1");
+        if (cached) {
+            try {
+                const catalog = JSON.parse(cached);
+                const game = (catalog.games || []).find((item) => item.slug === cleanSlug);
+                if (!game) return jsonResponse({ success: false, error: "Game not found." }, 404);
+                return jsonResponse({ success: true, game }, 200, {
+                    "Cache-Control": "public, max-age=60, s-maxage=300"
+                });
+            } catch (error) {
+                console.error("Invalid catalog cache in game lookup:", error);
+            }
+        }
     }
 
     const gameRow = await env.DB.prepare(
