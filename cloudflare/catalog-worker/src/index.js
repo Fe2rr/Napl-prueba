@@ -1221,8 +1221,6 @@ async function handleAdminListPorts(request, env) {
     const ports = [];
     let currentGame = "";
     let currentYear = "";
-    const portIds = new Set();
-
     for (const item of sheet.rows) {
         const row = item.object;
         const read = (...names) => {
@@ -1249,11 +1247,6 @@ async function handleAdminListPorts(request, env) {
             });
         }
         const portId = read("PORTS_ID", "PORT ID", "PORT_ID") || gameSlug + "-row-" + item.rowNumber;
-        const uniqueKey = gameSlug + "|" + portId;
-        if (portIds.has(uniqueKey)) {
-            return jsonResponse({ success: false, error: "Duplicate PORTS_ID detected for " + currentGame + ". Resolve duplicate IDs before editing the catalog." }, 409);
-        }
-        portIds.add(uniqueKey);
         const hasData = ["PLATFORM","PROJECT","LINK","URL","DEVELOPER","VERSION","LAST UPDATE","DATE ADDED","NEEDS GAME FILES?","DATA URL","NOTES","WORKS?","CONTROLLER SUPPORT"]
             .some((key) => read(key));
         if (!hasData) continue;
@@ -1356,10 +1349,11 @@ async function handleAdminSavePort(request, env) {
             groupRows.push(item);
             if (!firstGameRow) firstGameRow = item;
             const rowPortId = String(item.values[indexOf("PORTS_ID")] || "").trim();
-            if (rowPortId === (originalPortId || portId)) target = item;
+            if ((body.rowNumber && item.rowNumber === Number(body.rowNumber)) ||
+                rowPortId === (originalPortId || portId)) target = item;
         }
     }
-    if (originalPortId && !target) {
+    if ((originalPortId || body.rowNumber) && !target) {
         return jsonResponse({ success: false, error: "Port not found in Google Sheets. Reload the list." }, 409);
     }
 
@@ -1455,8 +1449,9 @@ async function handleAdminDeletePort(request, env) {
     const target = sheet.rows.find((item) => {
         const name = String(item.values[gameIndex] || "").trim();
         if (name) currentGame = name;
-        return importSlug(currentGame) === gameSlug &&
-            String(item.values[portIndex] || "").trim() === portId;
+        const sameGame = importSlug(currentGame) === gameSlug;
+        const sameRow = body.rowNumber && item.rowNumber === Number(body.rowNumber);
+        return sameGame && (sameRow || String(item.values[portIndex] || "").trim() === portId);
     });
     if (!target) return jsonResponse({ success: false, error: "Port not found in Google Sheets. Reload the catalog." }, 404);
 
