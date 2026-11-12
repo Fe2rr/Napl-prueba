@@ -41,7 +41,20 @@
       <section id="editor-panel" class="panel editor-panel" hidden>
         <div class="editor-heading"><div><span class="eyebrow">PORT EDITOR</span><h2 id="editor-title">Add port</h2></div><button id="cancel-edit" class="button secondary" type="button">Close</button></div>
         <form id="port-form">
-          <h3>Game information</h3>
+          <h3>Port information</h3>
+          <div class="form-grid">
+            <div class="field">
+              <label for="platform">Platform</label>
+              <input id="platform" maxlength="100" list="platform-options" autocomplete="off" required>
+              <datalist id="platform-options"></datalist>
+            </div>
+            <div class="field">
+              <label for="port-id">Port ID</label>
+              <input id="port-id" maxlength="120" required>
+            </div>
+          </div>
+
+          <h3>Game</h3>
           <div class="field game-autocomplete">
             <label for="game-search">Game</label>
             <input id="game-search" type="search" maxlength="180" list="game-options" placeholder="Search an existing game or type a new name…" autocomplete="off" required>
@@ -52,43 +65,41 @@
             <label for="game-name">Game name</label>
             <input id="game-name" maxlength="180" required>
           </div>
-          <div class="form-grid">
-            <div class="field"><label for="game-year">Year</label><input id="game-year" maxlength="20"></div>
-            <div class="field"><label for="game-genre">Genre</label><input id="game-genre" maxlength="120"></div>
-          </div>
-          <div class="field"><label for="game-description">Description</label><textarea id="game-description" rows="3" maxlength="4000"></textarea></div>
-          <div class="form-grid">
-            <div class="field"><label for="cover-url">Cover URL</label><input id="cover-url" type="url"></div>
-            <div class="field"><label for="launchbox-url">LaunchBox URL</label><input id="launchbox-url" type="url"></div>
-          </div>
 
-          <h3>Port information</h3>
-          <div class="form-grid">
-            <div class="field"><label for="port-id">Port ID</label><input id="port-id" maxlength="120" required></div>
-            <div class="field"><label for="platform">Platform</label><input id="platform" maxlength="100" list="platform-options" required><datalist id="platform-options"></datalist></div>
-          </div>
-          <div class="field"><label for="project">Project name</label><input id="project" maxlength="300"></div>
-          <div class="form-grid">
-            <div class="field"><label for="link">Project / source link</label><input id="link" type="url"></div>
-            <div class="field"><label for="port-url">Download / port URL</label><input id="port-url" type="url"></div>
-          </div>
-          <div class="form-grid">
-            <div class="field"><label for="developer">Developer</label><input id="developer" maxlength="180"></div>
-            <div class="field"><label for="version">Version</label><input id="version" maxlength="100"></div>
-          </div>
-          <div class="form-grid">
-            <div class="field"><label for="last-update">Last update</label><input id="last-update" placeholder="e.g. 2026-11-11"></div>
-            <div class="field"><label for="date-added">Date added</label><input id="date-added" placeholder="YYYY-MM-DD HH:MM:SS"></div>
-          </div>
-          <div class="form-grid">
-            <div class="field"><label for="needs-files">Needs game files?</label><input id="needs-files" maxlength="100"></div>
-            <div class="field"><label for="data-url">Game files URL</label><input id="data-url" type="url"></div>
-          </div>
-          <div class="form-grid">
-            <div class="field"><label for="works">Works?</label><input id="works" maxlength="100"></div>
-            <div class="field"><label for="controller-support">Controller support</label><input id="controller-support" maxlength="100"></div>
-          </div>
+          <div class="field"><label for="link">Link</label><input id="link" type="url"></div>
+          <div class="field"><label for="project">Project</label><input id="project" maxlength="300"></div>
+          <div class="field"><label for="port-url">URL</label><input id="port-url" type="url"></div>
+          <div class="field"><label for="needs-files">Need game files?</label><input id="needs-files" maxlength="100"></div>
+          <div class="field"><label for="data-url">Data URL</label><input id="data-url" type="url"></div>
           <div class="field"><label for="notes">Notes</label><textarea id="notes" rows="3" maxlength="2000"></textarea></div>
+          <div class="form-grid">
+            <div class="field">
+              <label for="input-methods">Input methods</label>
+              <select id="input-methods">
+                <option value="">Select input method</option>
+                <option value="Touch only">Touch only</option>
+                <option value="Gamepad only">Gamepad only</option>
+                <option value="Gamepad and touch controls">Gamepad and touch controls</option>
+              </select>
+            </div>
+            <div class="field"><label for="works">Works?</label><input id="works" maxlength="100"></div>
+          </div>
+          <div class="field"><label for="launchbox-url">LaunchBox URL</label><input id="launchbox-url" type="url"></div>
+
+          <h3>Port details</h3>
+          <div class="field"><label for="developer">Developer</label><input id="developer" maxlength="180"></div>
+          <div class="form-grid">
+            <div class="field"><label for="version">Version</label><input id="version" maxlength="100"></div>
+            <div class="field"><label for="last-update">Last update</label><input id="last-update" placeholder="e.g. 2026-11-11"></div>
+          </div>
+          <div class="field"><label for="date-added">Date added</label><input id="date-added" placeholder="YYYY-MM-DD HH:MM:SS"></div>
+
+          <h3>Game metadata</h3>
+          <div class="field"><label for="game-year">Year</label><input id="game-year" maxlength="20"></div>
+          <div class="field"><label for="game-description">Description</label><textarea id="game-description" rows="3" maxlength="4000"></textarea></div>
+          <div class="field"><label for="game-genre">Genre</label><input id="game-genre" maxlength="120"></div>
+          <div class="field"><label for="cover-url">Cover URL</label><input id="cover-url" type="url"></div>
+
           <p id="form-message" class="message" role="status"></p>
           <div class="form-actions"><button id="save-button" class="button primary" type="submit">Save port</button></div>
         </form>
