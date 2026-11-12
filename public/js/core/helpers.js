@@ -40,40 +40,7 @@ export function restoreDescriptionLineBreaks(description) {
 }
 
 export function parseLastUpdate(value) {
-    if (!value) return null;
-
-    const match = String(value)
-        .trim()
-        .match(/^(\d{4})\s*,\s*([A-Za-z]+)(?:\s+(\d{1,2}))?$/);
-
-    if (!match) return null;
-
-    const year = Number(match[1]);
-    const monthName = match[2].toLowerCase();
-    const day = match[3] ? Number(match[3]) : 1;
-
-    const months = {
-        january: 0, february: 1, march: 2,
-        april: 3, may: 4, june: 5,
-        july: 6, august: 7, september: 8,
-        october: 9, november: 10, december: 11,
-    };
-
-    if (!Object.prototype.hasOwnProperty.call(months, monthName)) {
-        return null;
-    }
-
-    const date = new Date(year, months[monthName], day);
-
-    if (
-        date.getFullYear() !== year ||
-        date.getMonth() !== months[monthName] ||
-        date.getDate() !== day
-    ) {
-        return null;
-    }
-
-    return date;
+    return parseDateAdded(value);
 }
 
 export function parseDateAdded(value) {
