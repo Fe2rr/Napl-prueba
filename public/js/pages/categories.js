@@ -207,7 +207,8 @@ export function createCategoryController(state) {
     }
 
     function normalizePlatformForFilter(value) {
-        return normalizeText(value).replace(/^nintendo\s+/, "");
+        // Match V3: compare the complete normalized platform label.
+        return normalizeText(value);
     }
 
     function displayFilteredGames() {
