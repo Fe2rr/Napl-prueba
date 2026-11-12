@@ -199,7 +199,7 @@ export function buildCatalogFromSheet(sheet) {
         const gameSlug = slugify(currentGame);
         const portId = /^unofficial-port(?:-\d+)?$/i.test(portIdRaw)
             ? gameSlug + "-" + portIdRaw.toLowerCase()
-            : portIdRaw;
+            : (portIdRaw || gameSlug + "-row-" + item.rowNumber);
         const link = get(row, ["LINK", "PROJECT LINK", "ENLACE"]);
         const url = get(row, ["URL", "PORT URL", "PORT LINK"]);
         const developer = get(row, ["DEVELOPER", "DEVELOPER/PUBLISHER", "DESARROLLADOR"]);
