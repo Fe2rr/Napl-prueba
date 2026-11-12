@@ -947,6 +947,7 @@ function displayPortCard(
     const details = document.createElement("div");
     details.className = "port-details";
 
+    const lastUpdateDisplay = String(port.lastUpdate || "").replace(/^(\\d{4}-\\d{2}-\\d{2})[ T].*$/, "$1");
     const fields = [
         ["Version", port.version, ""],
         ["Developer", port.developer, ""],
@@ -954,7 +955,7 @@ function displayPortCard(
         ["Port type", port.platform, ""],
         ["Supported inputs", port.controller, ""],
         ["Works?", port.works, ""],
-        ["Last update", port.lastUpdate, ""],
+        ["Last update", lastUpdateDisplay, ""],
     ];
 
     for (const [label, value, url] of fields) {
