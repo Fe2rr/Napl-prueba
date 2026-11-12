@@ -41,6 +41,25 @@ const fields = {
 function value(id) { return $(id).value.trim(); }
 function setValue(key, val = "") { $(fields[key]).value = val ?? ""; }
 
+function getMontevideoTimestamp() {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/Montevideo",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hourCycle: "h23"
+  }).formatToParts(new Date());
+  const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  return `${values.year}-${values.month}-${values.day} ${values.hour}:${values.minute}:${values.second}`;
+}
+
+function dateOnly(value) {
+  return String(value ?? "").trim().replace(/^(\\d{4}-\\d{2}-\\d{2})[ T].*$/, "$1");
+}
+
 function updateCoverPreview() {
   const url = value(fields.coverUrl);
   const image = $("cover-preview");
@@ -368,6 +387,7 @@ function openEditor(port = null) {
 
   if (port) {
     for (const [key] of Object.entries(fields)) setValue(key, port[key]);
+    setValue("lastUpdate", dateOnly(port.lastUpdate));
     $("unofficial-port").checked = /-unofficial-port(?:-\d+)?$/i.test(port.portId || "");
     gameSearch.disabled = false;
     $("game-name").readOnly = false;
@@ -462,6 +482,9 @@ form.addEventListener("submit", async (event) => {
   showMessage(formMessage, "Saving…");
   const payload = {};
   for (const [key, id] of Object.entries(fields)) payload[key] = value(id);
+  payload.lastUpdate = $("use-current-time").checked
+    ? getMontevideoTimestamp()
+    : dateOnly(payload.lastUpdate);
   payload.gameSlug = editing ? editing.gameSlug : selectedGameSlug;
   payload.originalPortId = editing ? editing.portId : "";
   payload.isUnofficialPort = $("unofficial-port").checked;
