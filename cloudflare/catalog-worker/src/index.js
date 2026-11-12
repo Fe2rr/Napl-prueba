@@ -1292,7 +1292,8 @@ async function handleAdminSavePort(request, env) {
 
     const clean = (value, max = 2000) => String(value ?? "").trim().slice(0, max);
     const gameName = clean(body.gameName, 180);
-    const gameSlug = clean(body.gameSlug, 180);
+    const requestedGameSlug = clean(body.gameSlug, 180);
+    const gameSlug = requestedGameSlug === "__new__" ? importSlug(gameName) : requestedGameSlug;
     const portId = clean(body.portId, 120);
     const originalPortId = clean(body.originalPortId, 120);
     const platform = clean(body.platform, 100);
