@@ -365,33 +365,90 @@ function renderList() {
       if (/\bitch\.io\b/.test(sourceText)) return "itch.io";
       return "Other sources";
     };
-    const compareDeveloper = (a, b) =>
-      String(a.developer || "").trim().localeCompare(String(b.developer || "").trim(), undefined, { sensitivity: "base", numeric: true }) ||
-      getDownloadLabel(a).localeCompare(getDownloadLabel(b), undefined, { sensitivity: "base", numeric: true });
-    const compareProject = (a, b) =>
-      String(a.project || getDownloadLabel(a)).localeCompare(String(b.project || getDownloadLabel(b)), undefined, { sensitivity: "base", numeric: true });
+    const compareText = (a, b) => String(a || "").trim().localeCompare(
+      String(b || "").trim(),
+      undefined,
+      { sensitivity: "base", numeric: true }
+    );
 
     if (isOthersPlatform) {
       const sourceOrder = ["Telegram", "Discord", "itch.io", "Other sources", "GitHub"];
       const sourceGroups = new Map(sourceOrder.map((source) => [source, []]));
       for (const port of categoryPorts) sourceGroups.get(getSource(port)).push(port);
 
-      for (const source of sourceOrder) {
+      const availableSources = sourceOrder.filter((source) => sourceGroups.get(source).length);
+      const tabs = document.createElement("div");
+      tabs.className = "others-source-tabs";
+      tabs.setAttribute("role", "tablist");
+      tabs.setAttribute("aria-label", "Port sources");
+      const panels = document.createElement("div");
+      panels.className = "others-source-panels";
+
+      availableSources.forEach((source, sourceIndex) => {
         const items = sourceGroups.get(source);
-        if (!items.length) continue;
-        const section = document.createElement("section");
-        section.className = "source-group";
-        const heading = document.createElement("h4");
-        heading.textContent = source;
-        section.append(heading);
-        const sorted = [...items].sort(source === "GitHub" ? compareProject : compareDeveloper);
-        for (const port of sorted) section.append(makePortRow(port));
-        body.append(section);
-      }
+        const tabId = `others-tab-${sourceIndex}-${Math.random().toString(36).slice(2, 7)}`;
+        const panelId = `${tabId}-panel`;
+
+        const tab = document.createElement("button");
+        tab.type = "button";
+        tab.className = "others-source-tab";
+        tab.id = tabId;
+        tab.setAttribute("role", "tab");
+        tab.setAttribute("aria-controls", panelId);
+        tab.setAttribute("aria-selected", sourceIndex === 0 ? "true" : "false");
+        tab.tabIndex = sourceIndex === 0 ? 0 : -1;
+        tab.innerHTML = `<span>${source}</span><span class="source-tab-count">${items.length}</span`;
+        tabs.append(tab);
+
+        const panel = document.createElement("div");
+        panel.className = "others-source-panel";
+        panel.id = panelId;
+        panel.setAttribute("role", "tabpanel");
+        panel.setAttribute("aria-labelledby", tabId);
+        panel.hidden = sourceIndex !== 0;
+
+        const byDeveloper = new Map();
+        for (const port of items) {
+          const developer = String(port.developer || "").trim() || "Unknown developer";
+          if (!byDeveloper.has(developer)) byDeveloper.set(developer, []);
+          byDeveloper.get(developer).push(port);
+        }
+
+        const developers = [...byDeveloper.keys()].sort(compareText);
+        for (const developer of developers) {
+          const group = document.createElement("section");
+          group.className = "developer-group";
+          const heading = document.createElement("h4");
+          heading.className = "developer-group-heading";
+          heading.textContent = developer;
+          const developerPorts = byDeveloper.get(developer);
+          const sortedPorts = source === "GitHub"
+            ? [...developerPorts].sort((a, b) => compareText(a.project || getDownloadLabel(a), b.project || getDownloadLabel(b)))
+            : [...developerPorts].sort((a, b) => compareText(getDownloadLabel(a), getDownloadLabel(b)));
+          group.append(heading);
+          for (const port of sortedPorts) group.append(makePortRow(port));
+          panel.append(group);
+        }
+
+        tab.addEventListener("click", () => {
+          tabs.querySelectorAll('[role="tab"]').forEach((otherTab) => {
+            const selected = otherTab === tab;
+            otherTab.setAttribute("aria-selected", selected ? "true" : "false");
+            otherTab.tabIndex = selected ? 0 : -1;
+          });
+          panels.querySelectorAll('[role="tabpanel"]').forEach((otherPanel) => {
+            otherPanel.hidden = otherPanel !== panel;
+          });
+        });
+
+        panels.append(panel);
+      });
+
+      body.append(tabs, panels);
     } else {
       const otherLinks = categoryPorts.filter((port) => !isGitHubPort(port));
       const githubLinks = categoryPorts.filter(isGitHubPort);
-      const sortByDownloadLabel = (a, b) => getDownloadLabel(a).localeCompare(getDownloadLabel(b), undefined, { sensitivity: "base" });
+      const sortByDownloadLabel = (a, b) => compareText(getDownloadLabel(a), getDownloadLabel(b));
 
       for (const [label, items] of [["Other sources", otherLinks], ["GitHub", githubLinks]]) {
         if (!items.length) continue;
