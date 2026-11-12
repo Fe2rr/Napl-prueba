@@ -57,7 +57,7 @@ function getMontevideoTimestamp() {
 }
 
 function dateOnly(value) {
-  return String(value ?? "").trim().replace(/^(\\d{4}-\\d{2}-\\d{2})[ T].*$/, "$1");
+  return String(value ?? "").trim().replace(/^(\d{4}-\d{2}-\d{2})[ T].*$/, "$1");
 }
 
 function updateCoverPreview() {
