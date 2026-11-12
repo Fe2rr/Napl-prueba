@@ -23,6 +23,7 @@ const platformOptions = $("platform-options");
 let secret = "";
 let games = [];
 let ports = [];
+let platformOrder = [];
 let editing = null;
 let selectedGameSlug = "__new__";
 
@@ -74,6 +75,7 @@ async function unlock(candidate) {
   sessionStorage.setItem(SECRET_KEY, candidate);
   games = data.games || [];
   ports = data.ports || [];
+  platformOrder = data.platforms || [];
   authPanel.hidden = true;
   adminPanel.hidden = false;
   logoutButton.hidden = false;
@@ -88,7 +90,9 @@ function populateOptions(selectedName = "") {
     return option;
   }));
   gameSearch.value = selectedName;
-  const platforms = [...new Set(ports.map((p) => p.platform).filter(Boolean))].sort((a, b) => a.localeCompare(b));
+  const availablePlatforms = [...new Set(ports.map((p) => p.platform).filter(Boolean))];
+  const ordered = [...platformOrder, ...availablePlatforms.filter((p) => !platformOrder.includes(p))];
+  const platforms = ordered.filter((p, index) => availablePlatforms.includes(p) && ordered.indexOf(p) === index);
   platformOptions.replaceChildren(...platforms.map((platform) => {
     const option = document.createElement("option");
     option.value = platform;
@@ -168,12 +172,29 @@ function renderList() {
   }
 
   const fragment = document.createDocumentFragment();
-  const platforms = [...groups.keys()].sort((a, b) => a.localeCompare(b));
+  const normalizePlatform = (value) => String(value || "").toLowerCase().normalize("NFD").replace(/[\\u0300-\\u036f]/g, "");
+  const getPlatformGroup = (platform) => {
+    const normalized = normalizePlatform(platform);
+    if (normalized === "others" || normalized === "other") return "Others";
+    if (normalized.includes("playstation")) return "PlayStation";
+    if (normalized.startsWith("xbox")) return "Xbox";
+    if (normalized.includes("nintendo") || normalized.includes("game boy") || normalized.includes("gameboy") || normalized.includes("gamecube") || normalized === "nes") return "Nintendo";
+    return "Others";
+  };
+  const menuGroupOrder = ["Nintendo", "PlayStation", "Xbox", "Others"];
+  const platformIndex = new Map(platformOrder.map((name, index) => [name, index]));
+  const platforms = [...groups.keys()].sort((a, b) => {
+    const groupDifference = menuGroupOrder.indexOf(getPlatformGroup(a)) - menuGroupOrder.indexOf(getPlatformGroup(b));
+    if (groupDifference) return groupDifference;
+    const indexA = platformIndex.has(a) ? platformIndex.get(a) : Number.MAX_SAFE_INTEGER;
+    const indexB = platformIndex.has(b) ? platformIndex.get(b) : Number.MAX_SAFE_INTEGER;
+    return indexA - indexB || a.localeCompare(b);
+  });
   for (const platform of platforms) {
     const categoryPorts = groups.get(platform);
     const details = document.createElement("details");
     details.className = "platform-category";
-    details.open = true;
+    details.open = false;
 
     const summary = document.createElement("summary");
     summary.className = "platform-category-heading";
@@ -294,6 +315,7 @@ form.addEventListener("submit", async (event) => {
     const data = await api("/admin/ports/list");
     games = data.games || [];
     ports = data.ports || [];
+    platformOrder = data.platforms || [];
     renderList();
     populateOptions();
     editor.hidden = true;
