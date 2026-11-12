@@ -64,7 +64,10 @@ export function getGamePlatformLabel(game, port) {
 export function createHomeGameCard(game, port, options = {}) {
     const element = document.createElement("a");
     element.className = "home-game";
-    element.href = `game.html?game=${encodeURIComponent(game.slug)}`;
+    const gameUrl = new URL("game.html", window.location.href);
+    gameUrl.searchParams.set("game", game.slug);
+    gameUrl.searchParams.set("return", options.returnUrl || "index.html");
+    element.href = gameUrl.href;
 
     const coverContainer = document.createElement("div");
     coverContainer.className = "home-game-cover-container";
