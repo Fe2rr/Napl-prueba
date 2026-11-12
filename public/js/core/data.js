@@ -123,17 +123,28 @@ export function extractPlatformOrder(rows) {
 export function processRows(rows) {
     let currentGame = "";
     let currentYear = "";
+    let currentPlatform = "";
+    let currentProject = "";
     const result = [];
 
     for (const row of rows) {
         const gameValue = getColumn(row, ["GAME", "GAME NAME", "NAME", "JUEGO"]);
         const yearValue = getColumn(row, ["YEAR", "ANO", "AÑO"]);
+        const platformValue = getColumn(row, ["PLATFORM", "PLATAFORM", "PLATAFORMA"]);
+        const projectValue = getColumn(row, ["PROJECT", "PROYECTO"]);
 
-        if (gameValue) currentGame = gameValue;
+        if (gameValue) {
+            currentGame = gameValue;
+            currentProject = "";
+        }
         if (yearValue) currentYear = yearValue;
+        if (platformValue) currentPlatform = platformValue;
+        if (projectValue) currentProject = projectValue;
 
-        const platform = getColumn(row, ["PLATFORM", "PLATAFORM", "PLATAFORMA"]);
-        const project = getColumn(row, ["PROJECT", "PROYECTO"]);
+        // Sheets exports merged cells as a value in the first row and blanks
+        // in the following rows. Carry those values forward for related ports.
+        const platform = currentPlatform;
+        const project = currentProject;
         const rawPortId = getColumn(row, ["PORTS_ID", "PORT ID", "PORT_ID"]);
         const portId =
             /^unofficial-port(?:-\d+)?$/i.test(rawPortId) && currentGame
