@@ -1662,6 +1662,18 @@ function normalizeDevicePart(value) {
         .toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
 }
 
+function normalizeProcessorName(value) {
+    const raw = String(value || "").trim();
+    if (!raw) return "";
+
+    // Alias comercial conocido del catálogo de origen.
+    // QTI SM6225 corresponde al Qualcomm Snapdragon 680.
+    if (/\bSM6225\b/i.test(raw)) return "Snapdragon 680";
+
+    // Evita mostrar Qualcomm como prefijo redundante.
+    return raw.replace(/^Qualcomm\s+/i, "").trim();
+}
+
 function deviceSlug(value) {
     return normalizeDevicePart(value).replace(/\s+/g, "-").slice(0, 140);
 }
@@ -1707,7 +1719,8 @@ async function loadAndNormalizeDevices() {
 
         const manufacturer = String(item?.manufacturer || "").trim();
         const model = String(item?.modelName || item?.device || "").trim();
-        const cpu = String(item?.processorName || "").trim();
+        const sourceCpu = String(item?.processorName || "").trim();
+        const cpu = normalizeProcessorName(sourceCpu);
         if (!manufacturer || !model) {
             invalidRecords++;
             continue;
