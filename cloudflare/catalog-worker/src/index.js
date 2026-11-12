@@ -1152,6 +1152,7 @@ async function handleAdminListPorts(request, env) {
             gameSlug: p.game_slug, gameName: p.game_name, year: p.game_year || "",
             genre: p.game_genre || "", description: p.game_description || "",
             coverUrl: p.game_cover_url || "", launchboxUrl: p.game_launchbox_url || "",
+            visits: Number(p.game_visits) || 0,
             portId: p.port_id, platform: p.platform || "", project: p.project || "",
             link: p.link || "", url: p.url || "", developer: p.developer || "",
             version: p.version || "", lastUpdate: p.last_update || "",
