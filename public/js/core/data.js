@@ -5,7 +5,6 @@
  * used by both index.html and game.html (no duplicate fetches).
  */
 
-import { CATALOG_API_BASE } from "./config.js";
 import {
     normalizeHeader,
     normalizeText,
@@ -283,55 +282,42 @@ export async function loadCatalog(force = false) {
     }
 
     catalogPromise = (async () => {
-        if (!CATALOG_API_BASE) {
-            throw new Error("The NAPL catalog API is not configured.");
-        }
+        const sheetUrl =
+            "https://docs.google.com/spreadsheets/d/1CO7dH7mbj9sl67g4e94wczHESp0NAsOa7_chKKii9OA/gviz/tq?tqx=out:csv&sheet=Community%20Ports";
 
-        const response = await fetch(`${CATALOG_API_BASE}/catalog`, {
+        const response = await fetch(sheetUrl, {
             method: "GET",
-            cache: "default",
+            cache: "no-store",
         });
 
         if (!response.ok) {
-            throw new Error(`Catalog API returned HTTP ${response.status}.`);
+            throw new Error(`Google Sheets returned HTTP ${response.status}.`);
         }
 
-        const data = await response.json();
-        if (
-            !data?.success ||
-            !Array.isArray(data.games) ||
-            !Array.isArray(data.platforms)
-        ) {
-            throw new Error("Catalog API returned an invalid response.");
+        const csv = await response.text();
+        const rows = parseCSV(csv);
+
+        if (!rows.length) {
+            throw new Error("Google Sheets returned an empty catalog.");
         }
 
-        const games = data.games.map((game) => ({
-            ...game,
-            ports: Array.isArray(game.ports) ? game.ports : [],
-            platforms: Array.isArray(game.platforms) ? game.platforms : [],
-        }));
-
-        const allRows = [];
-        for (const game of games) {
-            for (const port of game.ports) {
-                allRows.push({
-                    ...port,
-                    game: port.game || game.name,
-                    year: port.year || game.year || "",
-                    coverUrl: game.coverUrl || "",
-                    genre: game.genre || "",
-                    description: game.description || "",
-                });
-            }
+        const allRows = processRows(rows);
+        if (!allRows.length) {
+            throw new Error(
+                "The Community Ports sheet was read, but no valid ports were found."
+            );
         }
+
+        const games = groupGames(allRows);
+        const platformOrder = extractPlatformOrder(rows);
 
         if (!games.length) {
-            throw new Error("The catalog API returned no games.");
+            throw new Error("The Community Ports sheet contains no games.");
         }
 
         return {
             games,
-            platformOrder: data.platforms,
+            platformOrder,
             allRows,
         };
     })().catch((err) => {
