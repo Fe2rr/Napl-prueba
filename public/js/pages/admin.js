@@ -15,13 +15,16 @@ const editor = $("editor-panel");
 const form = $("port-form");
 const formMessage = $("form-message");
 const saveButton = $("save-button");
-const gameSelect = $("game-select");
+const gameSearch = $("game-search");
+const gameOptions = $("game-options");
+const gameSelectionHint = $("game-selection-hint");
 const platformOptions = $("platform-options");
 
 let secret = "";
 let games = [];
 let ports = [];
 let editing = null;
+let selectedGameSlug = "__new__";
 
 const fields = {
   gameName: "game-name", year: "game-year", genre: "game-genre",
@@ -64,6 +67,7 @@ function lock() {
   secretInput.value = "";
   list.replaceChildren();
 }
+
 async function unlock(candidate) {
   secret = candidate;
   const data = await api("/admin/ports/list");
@@ -74,23 +78,17 @@ async function unlock(candidate) {
   adminPanel.hidden = false;
   logoutButton.hidden = false;
   renderList();
-  populateGameOptions();
+  populateOptions();
 }
 
-function populateGameOptions(selected = "") {
-  gameSelect.replaceChildren();
-  const existing = document.createElement("option");
-  existing.value = "__new__";
-  existing.textContent = "＋ Create a new game";
-  gameSelect.append(existing);
-  for (const game of games) {
+function populateOptions(selectedName = "") {
+  gameOptions.replaceChildren(...games.map((game) => {
     const option = document.createElement("option");
-    option.value = game.slug;
-    option.textContent = game.name;
-    gameSelect.append(option);
-  }
-  gameSelect.value = selected || "__new__";
-  const platforms = [...new Set(ports.map((p) => p.platform).filter(Boolean))].sort();
+    option.value = game.name;
+    return option;
+  }));
+  gameSearch.value = selectedName;
+  const platforms = [...new Set(ports.map((p) => p.platform).filter(Boolean))].sort((a, b) => a.localeCompare(b));
   platformOptions.replaceChildren(...platforms.map((platform) => {
     const option = document.createElement("option");
     option.value = platform;
@@ -98,10 +96,59 @@ function populateGameOptions(selected = "") {
   }));
 }
 
+function getDownloadLabel(port) {
+  return String(port.project || port.url || port.link || port.portId || "Unnamed port").trim();
+}
+
+function isGitHubPort(port) {
+  return [port.url, port.link].some((candidate) => {
+    if (!candidate) return false;
+    try { return new URL(candidate).hostname.toLowerCase() === "github.com" || new URL(candidate).hostname.toLowerCase().endsWith(".github.com"); }
+    catch { return /(^|\/)github\.com\//i.test(candidate); }
+  });
+}
+
+function makePortRow(port) {
+  const row = document.createElement("article");
+  row.className = "port-row";
+  const main = document.createElement("div");
+  main.className = "port-main";
+
+  const name = document.createElement("div");
+  name.className = "port-name";
+  name.textContent = port.gameName;
+  const meta = document.createElement("div");
+  meta.className = "port-meta";
+  meta.textContent = [port.project, port.developer, port.portId].filter(Boolean).join(" · ");
+  main.append(name, meta);
+
+  const actions = document.createElement("div");
+  actions.className = "port-actions";
+  const destination = port.url || port.link;
+  if (destination) {
+    const download = document.createElement("a");
+    download.className = "button download-link";
+    download.href = destination;
+    download.target = "_blank";
+    download.rel = "noopener noreferrer";
+    download.textContent = getDownloadLabel(port);
+    actions.append(download);
+  }
+  const edit = document.createElement("button");
+  edit.type = "button";
+  edit.className = "button secondary";
+  edit.textContent = "Edit";
+  edit.addEventListener("click", () => openEditor(port));
+  actions.append(edit);
+
+  row.append(main, actions);
+  return row;
+}
+
 function renderList() {
   const query = searchInput.value.trim().toLowerCase();
   const filtered = ports.filter((port) => [
-    port.gameName, port.platform, port.portId, port.project, port.developer
+    port.gameName, port.platform, port.portId, port.project, port.developer, port.url, port.link
   ].join(" ").toLowerCase().includes(query));
   $("catalog-count").textContent = `${ports.length} ports · ${games.length} games`;
   list.replaceChildren();
@@ -112,26 +159,50 @@ function renderList() {
     list.append(empty);
     return;
   }
-  const fragment = document.createDocumentFragment();
+
+  const groups = new Map();
   for (const port of filtered) {
-    const row = document.createElement("article");
-    row.className = "port-row";
-    const main = document.createElement("div");
-    main.className = "port-main";
-    const name = document.createElement("div");
-    name.className = "port-name";
-    name.textContent = port.gameName;
-    const meta = document.createElement("div");
-    meta.className = "port-meta";
-    meta.textContent = [port.platform, port.project, port.portId].filter(Boolean).join(" · ");
-    main.append(name, meta);
-    const edit = document.createElement("button");
-    edit.type = "button";
-    edit.className = "button secondary";
-    edit.textContent = "Edit";
-    edit.addEventListener("click", () => openEditor(port));
-    row.append(main, edit);
-    fragment.append(row);
+    const platform = port.platform || "Uncategorized";
+    if (!groups.has(platform)) groups.set(platform, []);
+    groups.get(platform).push(port);
+  }
+
+  const fragment = document.createDocumentFragment();
+  const platforms = [...groups.keys()].sort((a, b) => a.localeCompare(b));
+  for (const platform of platforms) {
+    const categoryPorts = groups.get(platform);
+    const details = document.createElement("details");
+    details.className = "platform-category";
+    details.open = true;
+
+    const summary = document.createElement("summary");
+    summary.className = "platform-category-heading";
+    const title = document.createElement("span");
+    title.textContent = platform;
+    const count = document.createElement("span");
+    count.className = "category-count";
+    count.textContent = String(categoryPorts.length);
+    summary.append(title, count);
+    details.append(summary);
+
+    const body = document.createElement("div");
+    body.className = "platform-category-body";
+    const otherLinks = categoryPorts.filter((port) => !isGitHubPort(port));
+    const githubLinks = categoryPorts.filter(isGitHubPort);
+    const sortByDownloadLabel = (a, b) => getDownloadLabel(a).localeCompare(getDownloadLabel(b), undefined, { sensitivity: "base" });
+
+    for (const [label, items] of [["Other sources", otherLinks], ["GitHub", githubLinks]]) {
+      if (!items.length) continue;
+      const section = document.createElement("section");
+      section.className = "source-group";
+      const heading = document.createElement("h4");
+      heading.textContent = label;
+      section.append(heading);
+      for (const port of [...items].sort(sortByDownloadLabel)) section.append(makePortRow(port));
+      body.append(section);
+    }
+    details.append(body);
+    fragment.append(details);
   }
   list.append(fragment);
 }
@@ -142,41 +213,52 @@ function openEditor(port = null) {
   showMessage(formMessage, "");
   $("editor-title").textContent = port ? "Edit port" : "Add port";
   saveButton.textContent = port ? "Save changes" : "Add port";
-  populateGameOptions(port?.gameSlug || "__new__");
+  populateOptions(port?.gameName || "");
+  selectedGameSlug = port?.gameSlug || "__new__";
+
   if (port) {
-    for (const [key, id] of Object.entries(fields)) setValue(key, port[key]);
-    gameSelect.disabled = true;
+    for (const [key] of Object.entries(fields)) setValue(key, port[key]);
+    gameSearch.disabled = true;
+    $("game-name").readOnly = true;
     $("port-id").readOnly = true;
+    gameSelectionHint.textContent = "Editing the game linked to this port.";
   } else {
-    gameSelect.disabled = false;
+    gameSearch.disabled = false;
+    $("game-name").readOnly = false;
     $("port-id").readOnly = false;
     setValue("dateAdded", new Date().toISOString().slice(0, 19).replace("T", " "));
+    gameSelectionHint.textContent = "Choose an existing game from the suggestions, or type a new name.";
   }
-  updateGameFields();
   editor.hidden = false;
   editor.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
-function updateGameFields() {
-  const selected = games.find((game) => game.slug === gameSelect.value);
-  const isNew = gameSelect.value === "__new__";
-  $("game-name").disabled = !isNew && !editing;
-  if (selected && !editing) {
+function updateGameSelection() {
+  if (editing) return;
+  const typedName = gameSearch.value.trim();
+  const selected = games.find((game) => game.name.toLocaleLowerCase() === typedName.toLocaleLowerCase());
+
+  if (selected) {
+    selectedGameSlug = selected.slug;
     setValue("gameName", selected.name);
     setValue("year", selected.year);
     setValue("genre", selected.genre);
     setValue("description", selected.description);
     setValue("coverUrl", selected.cover_url);
     setValue("launchboxUrl", selected.launchbox_url);
-  } else if (isNew && !editing) {
-    for (const key of ["gameName", "year", "genre", "description", "coverUrl", "launchboxUrl"]) setValue(key, "");
-    $("game-name").disabled = false;
-  } else if (editing) {
-    $("game-name").disabled = false;
+    $("game-name").readOnly = true;
+    gameSelectionHint.textContent = "Existing game selected. Its information has been loaded.";
+  } else {
+    selectedGameSlug = "__new__";
+    setValue("gameName", typedName);
+    for (const key of ["year", "genre", "description", "coverUrl", "launchboxUrl"]) setValue(key, "");
+    $("game-name").readOnly = false;
+    gameSelectionHint.textContent = typedName ? "New game — it will be created when you save the port." : "Choose an existing game or enter a new name.";
   }
 }
 
-gameSelect.addEventListener("change", updateGameFields);
+gameSearch.addEventListener("input", updateGameSelection);
+gameSearch.addEventListener("change", updateGameSelection);
 $("new-port-button").addEventListener("click", () => openEditor());
 $("cancel-edit").addEventListener("click", () => { editor.hidden = true; editing = null; });
 searchInput.addEventListener("input", renderList);
@@ -196,17 +278,23 @@ authForm.addEventListener("submit", async (event) => {
 
 form.addEventListener("submit", async (event) => {
   event.preventDefault();
+  if (!editing) updateGameSelection();
+  if (!editing && selectedGameSlug === "__new__" && !value("gameName")) {
+    showMessage(formMessage, "Enter a game name.", true);
+    return;
+  }
   saveButton.disabled = true;
   showMessage(formMessage, "Saving…");
   const payload = {};
   for (const [key, id] of Object.entries(fields)) payload[key] = value(id);
-  payload.gameSlug = editing ? editing.gameSlug : gameSelect.value;
+  payload.gameSlug = editing ? editing.gameSlug : selectedGameSlug;
   try {
     await api("/admin/ports/save", { method: "POST", body: JSON.stringify(payload) });
     const data = await api("/admin/ports/list");
     games = data.games || [];
     ports = data.ports || [];
     renderList();
+    populateOptions();
     editor.hidden = true;
     editing = null;
     showMessage($("global-message"), "Port saved.");
