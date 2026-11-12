@@ -386,7 +386,8 @@ function renderList() {
 
       availableSources.forEach((source, sourceIndex) => {
         const items = sourceGroups.get(source);
-        const tabId = `others-tab-${sourceIndex}-${Math.random().toString(36).slice(2, 7)}`;
+        const platformId = normalizePlatform(platform).replace(/[^a-z0-9]+/g, "-");
+        const tabId = `others-${platformId}-tab-${sourceIndex}`;
         const panelId = `${tabId}-panel`;
 
         const tab = document.createElement("button");
@@ -397,7 +398,12 @@ function renderList() {
         tab.setAttribute("aria-controls", panelId);
         tab.setAttribute("aria-selected", sourceIndex === 0 ? "true" : "false");
         tab.tabIndex = sourceIndex === 0 ? 0 : -1;
-        tab.innerHTML = `<span>${source}</span><span class="source-tab-count">${items.length}</span`;
+        const tabLabel = document.createElement("span");
+        tabLabel.textContent = source;
+        const tabCount = document.createElement("span");
+        tabCount.className = "source-tab-count";
+        tabCount.textContent = String(items.length);
+        tab.append(tabLabel, tabCount);
         tabs.append(tab);
 
         const panel = document.createElement("div");
