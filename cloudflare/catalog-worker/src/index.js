@@ -1365,14 +1365,6 @@ async function handleAdminSavePort(request, env) {
     const now = new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString().slice(0, 19).replace("T", " ");
     const lastUpdate = clean(body.lastUpdate, 100);
     const dateAdded = clean(body.dateAdded, 100) || now;
-    const gameValues = makeValues(firstGameRow?.values || []);
-    set(gameValues, ["GAME"], gameName);
-    set(gameValues, ["YEAR"], clean(body.year, 20));
-    set(gameValues, ["GENRE"], clean(body.genre, 120));
-    set(gameValues, ["DESCRIPTION"], clean(body.description, 4000));
-    set(gameValues, ["COVER_URL","COVER URL"], clean(body.coverUrl, 1000));
-    set(gameValues, ["LAUNCHBOX_URL","LAUNCHBOX URL"], clean(body.launchboxUrl, 1000));
-
     const portValues = makeValues(target?.values || []);
     set(portValues, ["GAME"], gameName);
     set(portValues, ["YEAR"], clean(body.year, 20));
@@ -1395,7 +1387,6 @@ async function handleAdminSavePort(request, env) {
     set(portValues, ["CONTROLLER SUPPORT"], clean(body.inputMethods, 100));
 
     const { tabName } = sheet;
-    const endColumn = sheetColumnName(headers.length - 1);
     const quotedTab = "'" + tabName.replace(/'/g, "''") + "'";
     if (target) {
         const cellUpdates = [];
@@ -2250,9 +2241,13 @@ async function refreshCatalogCache(env) {
 
 export default {
     async scheduled(controller, env, ctx) {
-        ctx.waitUntil(Promise.allSettled([
-            runScheduledGitHubSync(env),
-            refreshCatalogCache(env)
+        ctx.waitUntil(Promise.all([
+            runScheduledGitHubSync(env).catch((error) => {
+                console.error("Scheduled GitHub-to-Sheets update failed:", error);
+            }),
+            refreshCatalogCache(env).catch((error) => {
+                console.error("Scheduled Sheets-to-KV refresh failed:", error);
+            })
         ]));
     },
 
