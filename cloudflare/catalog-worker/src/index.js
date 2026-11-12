@@ -1172,6 +1172,7 @@ async function handleAdminSavePort(request, env) {
     const isNewGame = requestedSlug === "__new__";
     const gameSlug = isNewGame ? importSlug(gameName) : requestedSlug;
     const portId = clean(body.portId, 120);
+    const originalPortId = clean(body.originalPortId, 120);
     const platform = clean(body.platform, 100);
     if (!gameName || !gameSlug || !portId || !platform) {
         return jsonResponse({ success: false, error: "Game name, game, port ID and platform are required." }, 400);
@@ -1194,9 +1195,19 @@ async function handleAdminSavePort(request, env) {
     const existingGame = await env.DB.prepare("SELECT slug FROM games WHERE slug = ?").bind(gameSlug).first();
     if (!isNewGame && !existingGame) return jsonResponse({ success: false, error: "Selected game no longer exists. Reload the list." }, 409);
     if (isNewGame && existingGame) return jsonResponse({ success: false, error: "A game with that name already exists. Select it from the game list instead." }, 409);
+    if (originalPortId && originalPortId !== portId) {
+        const conflictingPort = await env.DB.prepare("SELECT 1 AS found FROM ports WHERE game_slug = ? AND port_id = ?")
+            .bind(gameSlug, portId).first();
+        if (conflictingPort) return jsonResponse({ success: false, error: "That Port ID is already used by another port for this game." }, 409);
+    }
     const sortRow = await env.DB.prepare("SELECT COALESCE(MAX(sort_order), -1) + 1 AS next_order FROM ports").first();
 
-    const statements = [
+    const statements = [];
+    if (originalPortId && originalPortId !== portId) {
+        statements.push(env.DB.prepare("DELETE FROM port_developers WHERE game_slug = ? AND port_id = ?").bind(gameSlug, originalPortId));
+        statements.push(env.DB.prepare("UPDATE ports SET port_id = ? WHERE game_slug = ? AND port_id = ?").bind(portId, gameSlug, originalPortId));
+    }
+    statements.push(
         env.DB.prepare("INSERT INTO games (slug, name, year, genre, description, cover_url, launchbox_url) VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT(slug) DO UPDATE SET name = excluded.name, year = excluded.year, genre = excluded.genre, description = excluded.description, cover_url = excluded.cover_url, launchbox_url = excluded.launchbox_url, updated_at = CURRENT_TIMESTAMP")
             .bind(game.slug, game.name, game.year, game.genre, game.description, game.coverUrl, game.launchboxUrl),
         env.DB.prepare("INSERT INTO platforms (name, sort_order) VALUES (?, 999) ON CONFLICT(name) DO NOTHING").bind(port.platform),
