@@ -1153,10 +1153,10 @@ function getOtherPortSource(port) {
         .join(" ")
         .toLowerCase();
 
-    if (/github\\.com|github\\.io/.test(sourceText)) return "GitHub";
-    if (/\\b(t\\.me|telegram\\.me|telegram\\.org)\\b/.test(sourceText)) return "Telegram";
-    if (/\\b(discord\\.gg|discord\\.com|discordapp\\.com)\\b/.test(sourceText)) return "Discord";
-    if (/\\bitch\\.io\\b/.test(sourceText)) return "itch.io";
+    if (/github\.com|github\.io/.test(sourceText)) return "GitHub";
+    if (/\b(t\.me|telegram\.me|telegram\.org)\b/.test(sourceText)) return "Telegram";
+    if (/\b(discord\.gg|discord\.com|discordapp\.com)\b/.test(sourceText)) return "Discord";
+    if (/\bitch\.io\b/.test(sourceText)) return "itch.io";
     return "Other sources";
 }
 
@@ -1186,7 +1186,15 @@ function appendOtherPortGroups(portList, ports, allRows, ratings, ratingActions,
         const sourcePorts = groups.get(source);
         if (!sourcePorts.length) continue;
 
-        sourcePorts.sort(comparePortDevelopers);
+        sourcePorts.sort(
+            source === "GitHub"
+                ? (a, b) => String(a.project || "").localeCompare(
+                    String(b.project || ""),
+                    undefined,
+                    { sensitivity: "base", numeric: true }
+                )
+                : comparePortDevelopers
+        );
 
         const heading = document.createElement("h2");
         heading.className = "ports-section-title port-source-heading";
