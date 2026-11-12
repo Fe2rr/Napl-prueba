@@ -165,7 +165,7 @@ async function handleGetGame(slug, env) {
 
 async function handleGetDevices(env) {
     const result = await env.DEVICES_DB.prepare(
-        "SELECT id, name FROM devices ORDER BY name COLLATE NOCASE ASC"
+        "SELECT id, name, manufacturer, model, cpu FROM devices ORDER BY name COLLATE NOCASE ASC"
     ).all();
 
     return jsonResponse(
@@ -1632,77 +1632,172 @@ function handleImportVisitsPage() {
 
 
 
-const GOOGLE_PLAY_DEVICES_URL = "https://cdn.jsdelivr.net/gh/bsthen/device-models/devices.json";
+const ANDROID_DEVICE_CATALOG_URL = "https://hossain-khan.github.io/android-device-catalog-parser/catalog-data/android-devices-catalog.min.json";
 
-// Android handhelds whose commercial names are not consistently present in Google Play's catalog.
-// The models are Android-origin devices; Armada's list is used only as a cross-check for model names.
+// Consolas portátiles Android que pueden no figurar en el catálogo de Google Play.
+// No se asigna un procesador si la fuente no lo proporciona.
 const ANDROID_HANDHELD_DEVICES = [
-    // AYN
     "AYN Thor", "AYN Thor Lite", "AYN Odin 2", "AYN Odin 2 Mini",
     "AYN Odin 2 Portal", "AYN Odin 3", "AYN Odin 3 Portal",
-    // Retroid
     "Retroid Pocket 5", "Retroid Pocket 6", "Retroid Pocket Mini",
     "Retroid Pocket Mini V2", "Retroid Pocket Flip 2", "Retroid Pocket Duo",
     "Retroid Pocket Nova",
-    // AYANEO
     "AYANEO Pocket EVO", "AYANEO Pocket S2", "AYANEO Pocket ACE",
     "AYANEO Pocket DS", "AYANEO Pocket DMG", "AYANEO Pocket MICRO 2",
     "AYANEO Pocket S 2K", "AYANEO Pocket S 1K",
-    // KONKR and MANGMI
     "KONKR Pocket FIT (8 Elite)", "KONKR Pocket FIT (G3 Gen 3)",
     "MANGMI AIR Y Pro (8 GB)", "MANGMI Pocket Max",
-    // Anbernic models with official Android firmware or Android preinstalled
     "Anbernic RG353V", "Anbernic RG353M", "Anbernic RG353P",
     "Anbernic RG552", "Anbernic RG DS", "Anbernic RG505",
     "Anbernic RG556", "Anbernic RG Cube", "Anbernic RG405V",
     "Anbernic RG405M", "Anbernic RG406V", "Anbernic RG406H",
     "Anbernic RG557",
-    // Powkiddy Android models
     "Powkiddy X18S", "Powkiddy X28", "Powkiddy RGB10 Max 3 Pro",
-    // Other Android handhelds
     "GPD XP", "GPD XP Plus", "Logitech G Cloud", "Abxylute One",
-    "KT-R1", "Pimax Portal", "ZPG A1 Unicorn", "MOQI i7S",
-    "TJD T80"
+    "KT-R1", "Pimax Portal", "ZPG A1 Unicorn", "MOQI i7S", "TJD T80"
 ];
 
-async function handleImportDevices(request, env) {
+function normalizeDevicePart(value) {
+    return String(value || "").normalize("NFKD").replace(/[\\u0300-\\u036f]/g, "")
+        .toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+}
+
+function deviceSlug(value) {
+    return normalizeDevicePart(value).replace(/\\s+/g, "-").slice(0, 140);
+}
+
+function handheldManufacturer(name) {
+    const prefixes = ["AYANEO", "Anbernic", "Powkiddy", "Retroid", "Logitech", "Abxylute", "KONKR", "MANGMI", "Pimax", "ZPG", "MOQI", "GPD", "AYN"];
+    const lower = name.toLowerCase();
+    return prefixes.find((prefix) => lower.startsWith(prefix.toLowerCase())) || "Other";
+}
+
+async function loadAndNormalizeDevices() {
+    const response = await fetch(ANDROID_DEVICE_CATALOG_URL, {
+        headers: { "Accept": "application/json" },
+        cf: { cacheTtl: 3600, cacheEverything: false }
+    });
+    if (!response.ok) throw new Error("No se pudo descargar el catálogo de dispositivos (HTTP " + response.status + ").");
+
+    const source = await response.json();
+    if (!Array.isArray(source)) throw new Error("El catálogo de origen no tiene el formato esperado (array).");
+
+    const devices = new Map();
+    const formFactorCounts = { Phone: 0, Tablet: 0 };
+    let missingCpu = 0;
+    let matchingRecords = 0;
+
+    for (const item of source) {
+        const formFactor = String(item?.formFactor || "").trim();
+        if (formFactor !== "Phone" && formFactor !== "Tablet") continue;
+        matchingRecords++;
+        formFactorCounts[formFactor]++;
+
+        const manufacturer = String(item?.manufacturer || "").trim();
+        const model = String(item?.modelName || item?.device || "").trim();
+        const cpu = String(item?.processorName || "").trim();
+        if (!manufacturer || !model) continue;
+        if (!cpu) missingCpu++;
+
+        const key = [manufacturer, model, cpu].map(normalizeDevicePart).join("|");
+        const displayName = model + (cpu ? " (" + cpu + ")" : "");
+        const id = "catalog:" + deviceSlug(manufacturer + "-" + model + (cpu ? "-" + cpu : ""));
+        if (!devices.has(key)) {
+            devices.set(key, {
+                id,
+                name: displayName.slice(0, 180),
+                manufacturer: manufacturer.slice(0, 100),
+                model: model.slice(0, 140),
+                cpu: cpu.slice(0, 140)
+            });
+        }
+    }
+
+    const catalogDevices = devices.size;
+    for (const name of ANDROID_HANDHELD_DEVICES) {
+        const manufacturer = handheldManufacturer(name);
+        const model = name.slice(manufacturer === "Other" ? 0 : manufacturer.length).trim() || name;
+        const key = [manufacturer, model, ""].map(normalizeDevicePart).join("|");
+        if (!devices.has(key)) {
+            devices.set(key, {
+                id: "handheld:" + deviceSlug(name),
+                name: name.slice(0, 180),
+                manufacturer: manufacturer.slice(0, 100),
+                model: model.slice(0, 140),
+                cpu: ""
+            });
+        }
+    }
+
+    const result = Array.from(devices.values()).sort((a, b) => a.name.localeCompare(b.name));
+    if (!result.length) throw new Error("No se encontraron dispositivos Android compatibles; la base no fue modificada.");
+
+    return {
+        devices: result,
+        stats: {
+            sourceRecords: source.length,
+            matchingRecords,
+            phones: formFactorCounts.Phone,
+            tablets: formFactorCounts.Tablet,
+            catalogDevices,
+            handheldsAdded: result.length - catalogDevices,
+            duplicatesGrouped: Math.max(0, matchingRecords - catalogDevices),
+            missingCpu,
+            total: result.length,
+            sample: result.filter((device) => /redmi 10c/i.test(device.model)).slice(0, 5),
+            examples: result.slice(0, 12)
+        }
+    };
+}
+
+async function authorizeDeviceImport(request, env) {
     if (!env.IMPORT_SECRET) return jsonResponse({ success: false, error: "Import secret is not configured." }, 503);
     const authorization = request.headers.get("Authorization") || "";
     const supplied = authorization.startsWith("Bearer ") ? authorization.slice(7).trim() : "";
     if (!supplied || supplied !== env.IMPORT_SECRET) return jsonResponse({ success: false, error: "Unauthorized." }, 401);
+    return null;
+}
 
-    const response = await fetch(GOOGLE_PLAY_DEVICES_URL, {
-        headers: { "Accept": "application/json" },
-        cf: { cacheTtl: 0, cacheEverything: false }
-    });
-    if (!response.ok) return jsonResponse({ success: false, error: "Could not download Google Play device data.", upstreamStatus: response.status }, 502);
+async function handlePreviewDevices(request, env) {
+    const denied = await authorizeDeviceImport(request, env);
+    if (denied) return denied;
+    try {
+        const { devices, stats } = await loadAndNormalizeDevices();
+        return jsonResponse({
+            success: true,
+            message: "Vista previa únicamente. La base de datos no fue modificada.",
+            stats,
+            sample: devices.slice(0, 30)
+        });
+    } catch (error) {
+        return jsonResponse({ success: false, error: error.message || "Error al preparar el catálogo." }, 502);
+    }
+}
 
-    const source = await response.json();
-    if (!source || typeof source !== "object" || Array.isArray(source)) {
-        return jsonResponse({ success: false, error: "Google Play device data has an unexpected format." }, 502);
+async function handleImportDevices(request, env) {
+    const denied = await authorizeDeviceImport(request, env);
+    if (denied) return denied;
+
+    let normalized;
+    try {
+        normalized = await loadAndNormalizeDevices();
+    } catch (error) {
+        return jsonResponse({ success: false, error: error.message || "Error al preparar el catálogo." }, 502);
     }
 
-    const devices = new Map();
-    for (const [idValue, item] of Object.entries(source)) {
-        const id = String(idValue || "").trim();
-        const brand = String(item?.brand || "").trim();
-        const model = String(item?.name || "").trim();
-        const name = [brand, model].filter(Boolean).join(" ").trim();
-        if (id && name) devices.set(id, name.slice(0, 180));
-    }
-
-    for (const name of ANDROID_HANDHELD_DEVICES) {
-        const id = "handheld:" + name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
-        devices.set(id, name);
-    }
-
-    if (!devices.size) return jsonResponse({ success: false, error: "No valid Android devices found; database was not changed." }, 502);
-
-    const statements = Array.from(devices, ([id, name]) =>
+    const devices = normalized.devices;
+    const statements = devices.map((device) =>
         env.DEVICES_DB.prepare(
-            "INSERT INTO devices (id, name) VALUES (?, ?) ON CONFLICT(id) DO UPDATE SET name = excluded.name"
-        ).bind(id, name)
+            `INSERT INTO devices (id, name, manufacturer, model, cpu)
+             VALUES (?, ?, ?, ?, ?)
+             ON CONFLICT(id) DO UPDATE SET
+                name = excluded.name,
+                manufacturer = excluded.manufacturer,
+                model = excluded.model,
+                cpu = excluded.cpu`
+        ).bind(device.id, device.name, device.manufacturer, device.model, device.cpu)
     );
+
     for (let i = 0; i < statements.length; i += 50) {
         await env.DEVICES_DB.batch(statements.slice(i, i + 50));
     }
@@ -1710,28 +1805,43 @@ async function handleImportDevices(request, env) {
     const counts = await env.DEVICES_DB.prepare("SELECT COUNT(*) AS total FROM devices").first();
     return jsonResponse({
         success: true,
-        message: "Android device catalog imported. Existing compatibility reports were preserved.",
-        imported: devices.size,
+        message: "Catálogo importado. No se eliminaron dispositivos ni reportes de compatibilidad.",
+        imported: devices.length,
         totalDevices: Number(counts?.total) || 0,
-        handhelds: ANDROID_HANDHELD_DEVICES.length
+        stats: normalized.stats
     });
 }
 
 function handleImportDevicesPage() {
     const html = `<!doctype html><html lang="es"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>NAPL — Importar dispositivos Android</title>
-<body style="font:16px system-ui;max-width:520px;margin:40px auto;padding:0 18px;background:#101810;color:#eef5ee">
-<h2>Importar dispositivos Android</h2>
-<p>Se añadirán dispositivos de Google Play y consolas Android portátiles. No se borrarán dispositivos ni reportes existentes.</p>
-<form id="f"><input id="secret" type="password" autocomplete="off" required placeholder="IMPORT_SECRET" style="box-sizing:border-box;width:100%;padding:12px;margin:8px 0;background:#202d20;color:white;border:1px solid #607060;border-radius:6px">
-<button style="padding:12px 18px">Importar dispositivos</button></form><pre id="result" style="white-space:pre-wrap;overflow-wrap:anywhere"></pre>
+<title>NAPL — Catálogo de dispositivos Android</title>
+<body style="font:16px system-ui;max-width:680px;margin:40px auto;padding:0 18px;background:#101810;color:#eef5ee">
+<h2>Catálogo de dispositivos Android</h2>
+<p>Se incluyen teléfonos, tablets y consolas portátiles Android. Las variantes de RAM/almacenamiento se agrupan; los modelos con procesadores diferentes permanecen separados.</p>
+<p>Primero ejecutá una vista previa. Esa acción no modifica la base de datos.</p>
+<form id="f">
+<input id="secret" type="password" autocomplete="off" required placeholder="IMPORT_SECRET" style="box-sizing:border-box;width:100%;padding:12px;margin:8px 0;background:#202d20;color:white;border:1px solid #607060;border-radius:6px">
+<div style="display:flex;gap:10px;flex-wrap:wrap">
+<button type="button" id="preview" style="padding:12px 18px">Vista previa</button>
+<button type="button" id="import" style="padding:12px 18px;background:#315b38;color:white;border:0;border-radius:6px">Importar catálogo</button>
+</div>
+</form><pre id="result" style="white-space:pre-wrap;overflow-wrap:anywhere"></pre>
 <script>
-document.getElementById("f").addEventListener("submit", async function(e) {
- e.preventDefault(); const secret=document.getElementById("secret").value; const out=document.getElementById("result");
- out.textContent="Importando…";
- try { const response=await fetch("/admin/import-devices",{method:"POST",headers:{Authorization:"Bearer "+secret}});
- const data=await response.json(); out.textContent=JSON.stringify(data,null,2);
- } catch(err) { out.textContent="Error de conexión: "+err.message; }
+const secret=()=>document.getElementById("secret").value;
+const out=document.getElementById("result");
+async function run(path,label){
+ if(!secret()){out.textContent="Ingresá IMPORT_SECRET.";return;}
+ out.textContent=label+"…";
+ try{
+  const response=await fetch(path,{method:"POST",headers:{Authorization:"Bearer "+secret()}});
+  const data=await response.json();
+  out.textContent=JSON.stringify(data,null,2);
+ }catch(err){out.textContent="Error de conexión: "+err.message;}
+}
+document.getElementById("preview").addEventListener("click",()=>run("/admin/preview-devices","Generando vista previa"));
+document.getElementById("import").addEventListener("click",()=>{
+ if(!confirm("¿Importar el catálogo a D1? No se borrarán dispositivos ni reportes existentes."))return;
+ run("/admin/import-devices","Importando catálogo");
 });
 </script></body></html>`;
     return new Response(html, { headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" } });
@@ -1793,6 +1903,10 @@ export default {
 
             if (request.method === "GET" && path === "/admin/import-devices") {
                 return handleImportDevicesPage();
+            }
+
+            if (request.method === "POST" && path === "/admin/preview-devices") {
+                return await handlePreviewDevices(request, env);
             }
 
             if (request.method === "POST" && path === "/admin/import-devices") {
