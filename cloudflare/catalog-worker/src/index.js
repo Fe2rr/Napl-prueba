@@ -1293,7 +1293,13 @@ async function handleAdminDeletePort(request, env) {
 
     // Remove the selected port. If it was the game's final port, remove
     // the now-empty game and its game-level catalog/visit records as well.
-    const results = await env.DB.batch([
+    // This table is created only when the optional visit-history import is run.
+    // Check for it first so deleting a port also works on databases without that import.
+    const dailyTotalsTable = await env.DB.prepare(
+        "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'game_visit_daily_totals'"
+    ).first();
+
+    const statements = [
         env.DB.prepare("DELETE FROM port_developers WHERE game_slug = ? AND port_id = ?")
             .bind(gameSlug, portId),
         env.DB.prepare("DELETE FROM ports WHERE game_slug = ? AND port_id = ?")
@@ -1303,10 +1309,17 @@ async function handleAdminDeletePort(request, env) {
         env.DB.prepare("DELETE FROM game_visit_totals WHERE game_slug = ? AND NOT EXISTS (SELECT 1 FROM ports WHERE game_slug = ?)")
             .bind(gameSlug, gameSlug),
         env.DB.prepare("DELETE FROM game_visits WHERE game_slug = ? AND NOT EXISTS (SELECT 1 FROM ports WHERE game_slug = ?)")
-            .bind(gameSlug, gameSlug),
-        env.DB.prepare("DELETE FROM game_visit_daily_totals WHERE game_slug = ? AND NOT EXISTS (SELECT 1 FROM ports WHERE game_slug = ?)")
             .bind(gameSlug, gameSlug)
-    ]);
+    ];
+
+    if (dailyTotalsTable) {
+        statements.push(
+            env.DB.prepare("DELETE FROM game_visit_daily_totals WHERE game_slug = ? AND NOT EXISTS (SELECT 1 FROM ports WHERE game_slug = ?)")
+                .bind(gameSlug, gameSlug)
+        );
+    }
+
+    const results = await env.DB.batch(statements);
     const gameDeleted = Number(results[2]?.meta?.changes || 0) > 0;
 
     return jsonResponse({ success: true, gameSlug, portId, gameDeleted });
