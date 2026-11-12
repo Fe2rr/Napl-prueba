@@ -125,7 +125,20 @@ export function createCategoryController(state) {
         const fragment = document.createDocumentFragment();
         for (const game of list) {
             const port = getRepresentativePort(game);
-            fragment.appendChild(createHomeGameCard(game, port));
+            const returnParams = new URLSearchParams();
+            if (state.selectedPlatform) {
+                returnParams.set("platform", state.selectedPlatform);
+            } else if (state.selectedCategory) {
+                if (state.selectedCategory === "all-games") {
+                    returnParams.set("view", "all-games");
+                } else {
+                    returnParams.set("category", state.selectedCategory);
+                }
+            } else {
+                returnParams.set("view", "all-games");
+            }
+            const returnUrl = `index.html?${returnParams.toString()}`;
+            fragment.appendChild(createHomeGameCard(game, port, { returnUrl }));
         }
 
         gameList.appendChild(fragment);
