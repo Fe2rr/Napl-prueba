@@ -33,8 +33,8 @@ const fields = {
   portId: "port-id", platform: "platform", project: "project", link: "link",
   url: "port-url", developer: "developer", version: "version",
   lastUpdate: "last-update", dateAdded: "date-added", needsFiles: "needs-files",
-  dataUrl: "data-url", notes: "notes", works: "works",
-  controllerSupport: "input-methods"
+  dataUrl: "data-url", notes: "notes",
+  inputMethods: "input-methods"
 };
 
 function value(id) { return $(id).value.trim(); }
