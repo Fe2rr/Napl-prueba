@@ -56,14 +56,12 @@
 
           <h3>Game</h3>
           <div class="field game-autocomplete">
-            <label for="game-search">Game</label>
-            <input id="game-search" type="search" maxlength="180" placeholder="Search an existing game or type a new name…" autocomplete="off" required>
-            <div id="game-suggestions" class="game-suggestions" hidden></div>
+            <label for="game-name">Game</label>
+            <div class="game-input-wrap">
+              <input id="game-name" type="search" maxlength="180" placeholder="Search an existing game or type a new name…" autocomplete="off" required>
+              <div id="game-suggestions" class="game-suggestions" hidden></div>
+            </div>
             <p class="field-hint" id="game-selection-hint">Choose an existing game or enter a new name.</p>
-          </div>
-          <div class="field">
-            <label for="game-name">Game name</label>
-            <input id="game-name" maxlength="180" required>
           </div>
 
           <div class="field"><label for="project">Project</label><input id="project" maxlength="300"></div>
