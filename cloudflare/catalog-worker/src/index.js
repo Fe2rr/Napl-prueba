@@ -549,7 +549,7 @@ async function resolveGitHubVersion(info, token) {
 
 async function updateGitHubVersions(env) {
     if (!env.GITHUB_TOKEN) throw new Error('GITHUB_TOKEN secret is not configured.');
-    const rowsResult = await env.DB.prepare("SELECT game_slug, port_id, url FROM ports WHERE url IS NOT NULL AND TRIM(url) <> ''").all();
+    const rowsResult = await env.DB.prepare("SELECT game_slug, port_id, url FROM ports WHERE url IS NOT NULL AND TRIM(url) <> '' AND TRIM(COALESCE(developer, '')) = ''").all();
     const rows = rowsResult.results || [];
     const repoMap = new Map();
     for (const row of rows) {
@@ -616,7 +616,7 @@ async function updateDevelopers(env) {
 
         statements.push(
             env.DB.prepare(
-                "UPDATE ports SET developer = ? WHERE game_slug = ? AND port_id = ?"
+                "UPDATE ports SET developer = ? WHERE game_slug = ? AND port_id = ? AND TRIM(COALESCE(developer, '')) = ''"
             ).bind(info.owner, row.game_slug, row.port_id)
         );
         uniqueDevelopers.add(info.owner.toLowerCase());
@@ -979,7 +979,7 @@ async function updateSteamGameData(env) {
         if (needsData && !unique.has(appId)) unique.set(appId, row);
     }
 
-    const candidates = Array.from(unique.entries()).slice(0, 500);
+    const candidates = Array.from(unique.entries());
     const errors = [];
     let completedGames = 0;
     let failedGames = 0;
