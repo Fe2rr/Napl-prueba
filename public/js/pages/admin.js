@@ -356,19 +356,53 @@ function renderList() {
 
     const body = document.createElement("div");
     body.className = "platform-category-body";
-    const otherLinks = categoryPorts.filter((port) => !isGitHubPort(port));
-    const githubLinks = categoryPorts.filter(isGitHubPort);
-    const sortByDownloadLabel = (a, b) => getDownloadLabel(a).localeCompare(getDownloadLabel(b), undefined, { sensitivity: "base" });
+    const isOthersPlatform = ["other", "others"].includes(normalizePlatform(platform));
+    const getSource = (port) => {
+      const sourceText = [port.url, port.link, port.project].filter(Boolean).join(" ").toLowerCase();
+      if (/github\\.com|github\\.io/.test(sourceText)) return "GitHub";
+      if (/\\b(t\\.me|telegram\\.me|telegram\\.org)\\b/.test(sourceText)) return "Telegram";
+      if (/\\b(discord\\.gg|discord\\.com|discordapp\\.com)\\b/.test(sourceText)) return "Discord";
+      if (/\\bitch\\.io\\b/.test(sourceText)) return "itch.io";
+      return "Other sources";
+    };
+    const compareDeveloper = (a, b) =>
+      String(a.developer || "").trim().localeCompare(String(b.developer || "").trim(), undefined, { sensitivity: "base", numeric: true }) ||
+      getDownloadLabel(a).localeCompare(getDownloadLabel(b), undefined, { sensitivity: "base", numeric: true });
+    const compareProject = (a, b) =>
+      String(a.project || getDownloadLabel(a)).localeCompare(String(b.project || getDownloadLabel(b)), undefined, { sensitivity: "base", numeric: true });
 
-    for (const [label, items] of [["Other sources", otherLinks], ["GitHub", githubLinks]]) {
-      if (!items.length) continue;
-      const section = document.createElement("section");
-      section.className = "source-group";
-      const heading = document.createElement("h4");
-      heading.textContent = label;
-      section.append(heading);
-      for (const port of [...items].sort(sortByDownloadLabel)) section.append(makePortRow(port));
-      body.append(section);
+    if (isOthersPlatform) {
+      const sourceOrder = ["Telegram", "Discord", "itch.io", "Other sources", "GitHub"];
+      const sourceGroups = new Map(sourceOrder.map((source) => [source, []]));
+      for (const port of categoryPorts) sourceGroups.get(getSource(port)).push(port);
+
+      for (const source of sourceOrder) {
+        const items = sourceGroups.get(source);
+        if (!items.length) continue;
+        const section = document.createElement("section");
+        section.className = "source-group";
+        const heading = document.createElement("h4");
+        heading.textContent = source;
+        section.append(heading);
+        const sorted = [...items].sort(source === "GitHub" ? compareProject : compareDeveloper);
+        for (const port of sorted) section.append(makePortRow(port));
+        body.append(section);
+      }
+    } else {
+      const otherLinks = categoryPorts.filter((port) => !isGitHubPort(port));
+      const githubLinks = categoryPorts.filter(isGitHubPort);
+      const sortByDownloadLabel = (a, b) => getDownloadLabel(a).localeCompare(getDownloadLabel(b), undefined, { sensitivity: "base" });
+
+      for (const [label, items] of [["Other sources", otherLinks], ["GitHub", githubLinks]]) {
+        if (!items.length) continue;
+        const section = document.createElement("section");
+        section.className = "source-group";
+        const heading = document.createElement("h4");
+        heading.textContent = label;
+        section.append(heading);
+        for (const port of [...items].sort(sortByDownloadLabel)) section.append(makePortRow(port));
+        body.append(section);
+      }
     }
     details.append(body);
     fragment.append(details);
