@@ -1421,6 +1421,18 @@ async function handleAdminSavePort(request, env) {
         await writeSheetValues(env, quotedTab + "!A:Z", [portValues], { append: true });
     }
 
+    // Preserve the Admin ability to adjust the historical visit baseline.
+    if (body.visits !== undefined && body.visits !== null && body.visits !== "") {
+        await env.DB.prepare(`INSERT INTO game_visit_legacy_totals (game_slug, game_name, visits, imported_at)
+            VALUES (?, ?, MAX(0, ? - COALESCE((SELECT COUNT(*) FROM game_visits WHERE game_slug = ?), 0)), CURRENT_TIMESTAMP)
+            ON CONFLICT(game_slug) DO UPDATE SET
+                game_name = excluded.game_name,
+                visits = excluded.visits,
+                imported_at = CURRENT_TIMESTAMP`)
+            .bind(gameSlug, gameName, Math.max(0, Math.floor(Number(body.visits) || 0)), gameSlug)
+            .run();
+    }
+
     // Keep the public cache in sync immediately when KV is configured.
     if (env.CATALOG_KV) {
         const refreshed = await readSheetRows(env);
