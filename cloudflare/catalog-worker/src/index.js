@@ -549,7 +549,7 @@ async function resolveGitHubVersion(info, token) {
 
 async function updateGitHubVersions(env) {
     if (!env.GITHUB_TOKEN) throw new Error('GITHUB_TOKEN secret is not configured.');
-    const rowsResult = await env.DB.prepare("SELECT game_slug, port_id, url FROM ports WHERE url IS NOT NULL AND TRIM(url) <> ''").all();
+    const rowsResult = await env.DB.prepare("SELECT game_slug, port_id, url FROM ports WHERE url IS NOT NULL AND (LOWER(TRIM(url)) LIKE 'https://github.com/%' OR LOWER(TRIM(url)) LIKE 'http://github.com/%' OR LOWER(TRIM(url)) LIKE 'https://www.github.com/%' OR LOWER(TRIM(url)) LIKE 'http://www.github.com/%')").all();
     const rows = rowsResult.results || [];
     const repoMap = new Map();
     for (const row of rows) {
