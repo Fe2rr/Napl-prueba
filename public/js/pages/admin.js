@@ -78,6 +78,51 @@ async function api(path, options = {}) {
   return data;
 }
 
+const maintenanceButtons = [...document.querySelectorAll("[data-maintenance-action]")];
+const maintenanceStatus = $("maintenance-status");
+let maintenanceRunning = false;
+
+function summarizeMaintenance(action, data) {
+  const errors = Array.isArray(data.errors) ? data.errors.length : 0;
+  const parts = [];
+  if (action === "update-github-versions") {
+    parts.push(`${data.updatedRows ?? 0} ports updated`, `${data.versionRows ?? 0} versions`, `${data.dateRows ?? 0} dates`);
+  } else if (action === "update-developers") {
+    parts.push(`${data.updatedRows ?? 0} developers completed`, `${data.scannedRows ?? 0} ports scanned`);
+  } else if (action === "update-launchbox-data") {
+    parts.push(`${data.updatedGames ?? 0} games updated`, `${data.filledFields ?? 0} fields completed`, `${data.candidates ?? 0} candidates`);
+  } else if (action === "update-steam-data") {
+    parts.push(`${data.completedGames ?? 0} games updated`, `${data.filledFields ?? 0} fields completed`, `${data.steamCandidates ?? 0} candidates`);
+  }
+  if (errors) parts.push(`${errors} errors`);
+  return parts.join(" · ");
+}
+
+async function runMaintenance(action, button) {
+  if (maintenanceRunning) return;
+  maintenanceRunning = true;
+  maintenanceButtons.forEach((item) => { item.disabled = true; });
+  const originalLabel = button.textContent;
+  button.textContent = "Running…";
+  maintenanceStatus.classList.remove("error");
+  maintenanceStatus.textContent = "The update is running. Keep this page open until it finishes.";
+  try {
+    const data = await api(`/admin/${action}`, { method: "POST" });
+    maintenanceStatus.textContent = `Completed: ${summarizeMaintenance(action, data)}`;
+  } catch (error) {
+    maintenanceStatus.textContent = `Update failed: ${error.message}`;
+    maintenanceStatus.classList.add("error");
+  } finally {
+    button.textContent = originalLabel;
+    maintenanceButtons.forEach((item) => { item.disabled = false; });
+    maintenanceRunning = false;
+  }
+}
+
+maintenanceButtons.forEach((button) => {
+  button.addEventListener("click", () => runMaintenance(button.dataset.maintenanceAction, button));
+});
+
 function lock() {
   secret = "";
   sessionStorage.removeItem(SECRET_KEY);
