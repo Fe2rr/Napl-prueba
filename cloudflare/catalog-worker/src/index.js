@@ -1221,7 +1221,7 @@ async function handleAdminSavePort(request, env) {
             .bind(port.portId, game.slug, port.platform, port.project, port.link, port.url, port.developer, port.version, port.lastUpdate, port.dateAdded, port.needsFiles, port.dataUrl, port.notes, "" , port.inputMethods, Number(sortRow?.next_order) || 0),
         env.DB.prepare("DELETE FROM port_developers WHERE game_slug = ? AND port_id = ?").bind(game.slug, port.portId),
         env.DB.prepare("DELETE FROM game_categories WHERE game_slug = ?").bind(game.slug)
-    ];
+    );
 
     if (port.developer) {
         const developerSlug = importSlug(port.developer);
