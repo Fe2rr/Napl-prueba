@@ -17,6 +17,8 @@ const formMessage = $("form-message");
 const saveButton = $("save-button");
 const gameSearch = $("game-name");
 const gameSuggestions = $("game-suggestions");
+const projectSearch = $("project");
+const projectSuggestions = $("project-suggestions");
 const gameSelectionHint = $("game-selection-hint");
 const platformSelect = $("platform-select");
 const platformNew = $("platform-new");
@@ -216,6 +218,68 @@ function populateGameOptions(query = "") {
     gameSuggestions.append(option);
   }
   gameSuggestions.hidden = !matches.length || !normalizedQuery;
+}
+
+function getMultiAppOptions(query = "") {
+  const normalizedQuery = query.trim().toLocaleLowerCase();
+  const candidates = ports.filter((port) =>
+    String(port.platform || "").trim().toLocaleLowerCase().replace(/\\s+/g, " ") === "multi-game apps" &&
+    String(port.gameName || "").trim()
+  );
+
+  const byApp = new Map();
+  for (const port of candidates) {
+    const name = String(port.gameName).trim();
+    const key = name.toLocaleLowerCase();
+    const completeness = ["link", "url", "version", "developer", "needsFiles", "inputMethods", "lastUpdate"]
+      .filter((field) => String(port[field] ?? "").trim()).length;
+    const timestamp = Date.parse(String(port.lastUpdate || "").replace(" ", "T")) || 0;
+    const current = byApp.get(key);
+    if (!current || completeness > current.completeness ||
+        (completeness === current.completeness && timestamp > current.timestamp)) {
+      byApp.set(key, { name, port, completeness, timestamp });
+    }
+  }
+
+  return [...byApp.values()]
+    .filter((item) => !normalizedQuery || item.name.toLocaleLowerCase().includes(normalizedQuery))
+    .sort((a, b) => {
+      const aStarts = a.name.toLocaleLowerCase().startsWith(normalizedQuery);
+      const bStarts = b.name.toLocaleLowerCase().startsWith(normalizedQuery);
+      if (aStarts !== bStarts) return aStarts ? -1 : 1;
+      return a.name.localeCompare(b.name, undefined, { sensitivity: "base" });
+    })
+    .slice(0, 8);
+}
+
+function populateProjectOptions(query = "") {
+  const matches = getMultiAppOptions(query);
+  projectSuggestions.replaceChildren();
+
+  for (const item of matches) {
+    const option = document.createElement("button");
+    option.type = "button";
+    option.className = "game-suggestion";
+    option.textContent = item.name;
+    option.addEventListener("pointerdown", (event) => event.preventDefault());
+    option.addEventListener("click", () => {
+      projectSearch.value = item.name;
+      const port = item.port;
+      setValue("link", port.link);
+      setValue("url", port.url);
+      setValue("version", port.version);
+      setValue("developer", port.developer);
+      setValue("needsFiles", port.needsFiles);
+      setValue("inputMethods", port.inputMethods);
+      setValue("lastUpdate", dateOnly(port.lastUpdate));
+      $("use-current-time").checked = false;
+      projectSuggestions.hidden = true;
+      showMessage(formMessage, `Multi App template loaded: ${item.name}`);
+    });
+    projectSuggestions.append(option);
+  }
+
+  projectSuggestions.hidden = !matches.length;
 }
 
 function populatePlatformOptions(selectedPlatform = "") {
@@ -532,6 +596,11 @@ function updateGameSelection() {
   }
 }
 
+projectSearch.addEventListener("input", () => populateProjectOptions(projectSearch.value));
+projectSearch.addEventListener("focus", () => populateProjectOptions(projectSearch.value));
+projectSearch.addEventListener("blur", () => {
+  window.setTimeout(() => { projectSuggestions.hidden = true; }, 120);
+});
 $("cover-url").addEventListener("input", updateCoverPreview);
 gameSearch.addEventListener("input", updateGameSelection);
 gameSearch.addEventListener("focus", () => populateGameOptions(gameSearch.value));
