@@ -208,7 +208,9 @@
 .home-game-list,
 #game-list {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(330px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(min(330px, 100%), 1fr));
+  width: 100%;
+  min-width: 0;
   gap: 14px;
 }
 
@@ -244,7 +246,9 @@
   .home-list,
   .home-game-list,
   #game-list {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
+    width: 100%;
+    min-width: 0;
     gap: 12px;
   }
 }
