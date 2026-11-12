@@ -209,15 +209,36 @@ export function initNavigation(options = {}) {
     }
 
     if (backButton) {
-        backButton.addEventListener("click", (event) => {
-            if (!document.referrer) return;
-            try {
-                if (new URL(document.referrer).origin === location.origin) {
-                    event.preventDefault();
-                    history.back();
+        backButton.addEventListener("click", () => {
+            if (mode === "game") {
+                const params = new URLSearchParams(window.location.search);
+                const returnPath = params.get("return");
+
+                if (returnPath) {
+                    try {
+                        const target = new URL(returnPath, window.location.href);
+                        if (
+                            target.origin === window.location.origin &&
+                            target.pathname.endsWith("/index.html")
+                        ) {
+                            window.location.href = target.href;
+                            return;
+                        }
+                    } catch {
+                        // Use the safe fallback below.
+                    }
                 }
-            } catch {
-                // Keep normal link fallback
+
+                if (
+                    document.referrer &&
+                    new URL(document.referrer).origin === window.location.origin &&
+                    window.history.length > 1
+                ) {
+                    window.history.back();
+                    return;
+                }
+
+                window.location.href = "index.html?view=all-games";
             }
         });
     }
