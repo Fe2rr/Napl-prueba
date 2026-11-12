@@ -1147,6 +1147,68 @@ function displayPortCard(
     return card;
 }
 
+function getOtherPortSource(port) {
+    const sourceText = [port.url, port.link, port.project]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase();
+
+    if (/github\\.com|github\\.io/.test(sourceText)) return "GitHub";
+    if (/\\b(t\\.me|telegram\\.me|telegram\\.org)\\b/.test(sourceText)) return "Telegram";
+    if (/\\b(discord\\.gg|discord\\.com|discordapp\\.com)\\b/.test(sourceText)) return "Discord";
+    if (/\\bitch\\.io\\b/.test(sourceText)) return "itch.io";
+    return "Other sources";
+}
+
+function comparePortDevelopers(a, b) {
+    const developerA = String(a.developer || "").trim();
+    const developerB = String(b.developer || "").trim();
+
+    return developerA.localeCompare(developerB, undefined, {
+        sensitivity: "base",
+        numeric: true,
+    }) || String(a.project || "").localeCompare(String(b.project || ""), undefined, {
+        sensitivity: "base",
+        numeric: true,
+    });
+}
+
+function appendOtherPortGroups(portList, ports, allRows, ratings, ratingActions, compatibility, compatibilityActions) {
+    const groupOrder = ["Telegram", "Discord", "itch.io", "Other sources", "GitHub"];
+    const groups = new Map(groupOrder.map((name) => [name, []]));
+
+    for (const port of ports) {
+        const source = getOtherPortSource(port);
+        groups.get(source).push(port);
+    }
+
+    for (const source of groupOrder) {
+        const sourcePorts = groups.get(source);
+        if (!sourcePorts.length) continue;
+
+        sourcePorts.sort(comparePortDevelopers);
+
+        const heading = document.createElement("h2");
+        heading.className = "ports-section-title port-source-heading";
+        heading.textContent = source;
+        portList.appendChild(heading);
+
+        sourcePorts.forEach((port, index) => {
+            portList.appendChild(
+                displayPortCard(
+                    port,
+                    index,
+                    allRows,
+                    ratings,
+                    ratingActions,
+                    compatibility,
+                    compatibilityActions
+                )
+            );
+        });
+    }
+}
+
 export function displayGame(
     game,
     allRows,
@@ -1181,7 +1243,18 @@ export function displayGame(
             "No ports are currently listed for this game.";
         portList.appendChild(emptyMessage);
     } else {
-        const sortedPorts = game.ports
+        const othersPorts = [];
+        const regularPorts = [];
+
+        for (const port of game.ports) {
+            if (/^others?$/i.test(String(port.platform || "").trim())) {
+                othersPorts.push(port);
+            } else {
+                regularPorts.push(port);
+            }
+        }
+
+        const sortedPorts = regularPorts
             .map((port, originalIndex) => ({
                 port,
                 originalIndex,
@@ -1204,8 +1277,6 @@ export function displayGame(
                     if (avgDiff !== 0) return avgDiff;
                 }
 
-                // When ratings are equal (or neither port has votes),
-                // show the most recently updated port first.
                 const aUpdated = Date.parse(a.port.lastUpdate || "") || 0;
                 const bUpdated = Date.parse(b.port.lastUpdate || "") || 0;
                 if (aUpdated !== bUpdated) return bUpdated - aUpdated;
@@ -1226,6 +1297,18 @@ export function displayGame(
                 )
             );
         });
+
+        if (othersPorts.length) {
+            appendOtherPortGroups(
+                portList,
+                othersPorts,
+                allRows,
+                ratings,
+                ratingActions,
+                compatibility,
+                compatibilityActions
+            );
+        }
     }
 
     if (isMultiGameApp(game)) {
