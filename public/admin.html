@@ -70,6 +70,10 @@
               <div class="port-top">
                 <div class="field"><label for="project">Port / Project name</label><input id="project" maxlength="300" placeholder="Project name"></div>
               </div>
+              <div class="port-link-row admin-download-row">
+                <div class="field"><label for="link">Download button text</label><input id="link" type="text" maxlength="1000" placeholder="Download / GitHub / Play Store"></div>
+                <div class="field"><label for="port-url">Download button URL</label><input id="port-url" type="url" placeholder="https://…"></div>
+              </div>
               <div class="port-details">
                 <div class="port-detail"><label class="port-detail-label" for="platform-select">Platform</label><input id="platform" type="hidden"><select id="platform-select" required><option value="">Select a platform…</option><option value="__new__">＋ Add new platform…</option></select><input id="platform-new" maxlength="100" placeholder="New platform name" hidden></div>
                 <div class="port-detail"><label class="port-detail-label" for="version">Version</label><input id="version" maxlength="100" placeholder="Version"></div>
@@ -81,10 +85,6 @@
               </div>
               <div class="port-notes admin-port-notes">
                 <div class="field"><label for="notes" class="port-notes-label">Notes</label><textarea id="notes" rows="3" maxlength="2000" placeholder="Additional port notes…"></textarea></div>
-              </div>
-              <div class="port-link-row admin-download-row">
-                <div class="field"><label for="link">Download button text</label><input id="link" type="text" maxlength="1000" placeholder="Download / GitHub / Play Store"></div>
-                <div class="field"><label for="port-url">Download button URL</label><input id="port-url" type="url" placeholder="https://…"></div>
               </div>
             </article>
           </section>
