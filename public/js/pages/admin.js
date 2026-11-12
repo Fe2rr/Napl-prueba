@@ -30,6 +30,7 @@ let ports = [];
 let platformOrder = [];
 let editing = null;
 let selectedGameSlug = "__new__";
+let originalLastUpdate = "";
 
 const fields = {
   gameName: "game-name", year: "game-year", genre: "game-genre",
@@ -273,6 +274,7 @@ function populateProjectOptions(query = "") {
       setValue("needsFiles", port.needsFiles);
       setValue("inputMethods", port.inputMethods);
       setValue("lastUpdate", dateOnly(port.lastUpdate));
+      originalLastUpdate = String(port.lastUpdate || "").trim();
       $("use-current-time").checked = false;
       projectSuggestions.hidden = true;
       showMessage(formMessage, `Multi App template loaded: ${item.name}`);
@@ -540,6 +542,7 @@ function renderList() {
 
 function openEditor(port = null) {
   editing = port ? { gameSlug: port.gameSlug, portId: port.portId } : null;
+  originalLastUpdate = String(port?.lastUpdate || "").trim();
   form.reset();
   showMessage(formMessage, "");
   $("editor-title").textContent = port ? "Edit port" : "Add port";
@@ -681,9 +684,13 @@ form.addEventListener("submit", async (event) => {
   showMessage(formMessage, "Saving…");
   const payload = {};
   for (const [key, id] of Object.entries(fields)) payload[key] = value(id);
+  const enteredLastUpdate = dateOnly(payload.lastUpdate);
+  const originalDate = dateOnly(originalLastUpdate);
   payload.lastUpdate = $("use-current-time").checked
     ? getMontevideoTimestamp()
-    : dateOnly(payload.lastUpdate);
+    : (originalLastUpdate && enteredLastUpdate === originalDate
+      ? originalLastUpdate
+      : enteredLastUpdate);
   payload.gameSlug = editing ? editing.gameSlug : selectedGameSlug;
   payload.originalPortId = editing ? editing.portId : "";
   payload.isUnofficialPort = $("unofficial-port").checked;
