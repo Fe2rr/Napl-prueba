@@ -18,8 +18,8 @@
 @media(max-width:620px){.port-actions{flex-wrap:wrap;justify-content:flex-end}.download-link{max-width:145px}.platform-category-heading{padding:12px}}
 
 /* Stable, input-anchored game suggestions */
-.game-autocomplete{position:relative}
-.game-suggestions{position:absolute;z-index:30;top:100%;left:0;right:0;margin-top:5px;max-height:240px;overflow-y:auto;border:1px solid var(--line);border-radius:10px;background:#14231b;box-shadow:0 12px 28px rgba(0,0,0,.4)}
+.game-input-wrap{position:relative}
+.game-suggestions{position:absolute;z-index:50;top:calc(100% + 5px);left:0;right:0;max-height:240px;overflow-y:auto;border:1px solid var(--line);border-radius:10px;background:#14231b;box-shadow:0 12px 28px rgba(0,0,0,.4)}
 .game-suggestions[hidden]{display:none}
 .game-suggestion{display:block;width:100%;padding:11px 13px;border:0;border-bottom:1px solid var(--line);background:transparent;color:var(--text);text-align:left;font:inherit;cursor:pointer}
 .game-suggestion:last-child{border-bottom:0}
