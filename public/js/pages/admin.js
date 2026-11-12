@@ -40,6 +40,25 @@ const fields = {
 
 function value(id) { return $(id).value.trim(); }
 function setValue(key, val = "") { $(fields[key]).value = val ?? ""; }
+
+function updateCoverPreview() {
+  const url = value(fields.coverUrl);
+  const image = $("cover-preview");
+  const placeholder = $("cover-placeholder");
+  if (/^https?:\/\/\S+$/i.test(url)) {
+    image.src = url;
+    image.hidden = false;
+    placeholder.hidden = true;
+    image.onerror = () => {
+      image.hidden = true;
+      placeholder.hidden = false;
+    };
+  } else {
+    image.removeAttribute("src");
+    image.hidden = true;
+    placeholder.hidden = false;
+  }
+}
 function showMessage(target, message, isError = false) {
   target.textContent = message || "";
   target.classList.toggle("error", isError);
@@ -299,6 +318,7 @@ function openEditor(port = null) {
     setValue("dateAdded", new Date().toISOString().slice(0, 19).replace("T", " "));
     gameSelectionHint.textContent = "Choose an existing game from the suggestions, or type a new name.";
   }
+  updateCoverPreview();
   editor.hidden = false;
   editor.scrollIntoView({ behavior: "smooth", block: "start" });
 }
@@ -318,6 +338,7 @@ function updateGameSelection() {
     setValue("coverUrl", selected.cover_url);
     setValue("launchboxUrl", selected.launchbox_url);
     setValue("visits", selected.visits);
+    updateCoverPreview();
     $("game-name").readOnly = true;
     gameSelectionHint.textContent = "Existing game selected. Its information has been loaded.";
   } else {
@@ -325,11 +346,13 @@ function updateGameSelection() {
     setValue("gameName", typedName);
     for (const key of ["year", "genre", "description", "coverUrl", "launchboxUrl"]) setValue(key, "");
     setValue("visits", 0);
+    updateCoverPreview();
     $("game-name").readOnly = false;
     gameSelectionHint.textContent = typedName ? "New game — it will be created when you save the port." : "Choose an existing game or enter a new name.";
   }
 }
 
+$("cover-url").addEventListener("input", updateCoverPreview);
 gameSearch.addEventListener("input", updateGameSelection);
 gameSearch.addEventListener("focus", () => populateGameOptions(gameSearch.value));
 gameSearch.addEventListener("change", updateGameSelection);
