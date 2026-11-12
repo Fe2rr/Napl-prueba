@@ -368,7 +368,7 @@ form.addEventListener("submit", async (event) => {
   if (platformSelect.value === "__new__") $("platform").value = platformNew.value.trim();
   else $("platform").value = platformSelect.value;
   if (!editing) updateGameSelection();
-  if (!editing && selectedGameSlug === "__new__" && !value("gameName")) {
+  if (!editing && selectedGameSlug === "__new__" && !value(fields.gameName)) {
     showMessage(formMessage, "Enter a game name.", true);
     return;
   }
