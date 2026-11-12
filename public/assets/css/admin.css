@@ -94,3 +94,7 @@
 .maintenance-button:disabled{opacity:.55;cursor:wait}
 #maintenance-status{margin-top:14px}
 @media(max-width:620px){.maintenance-actions{grid-template-columns:1fr}}
+
+
+/* Optional timestamp for manual last-update edits */
+ .admin-last-update-field .admin-current-time-option{display:flex;align-items:center;gap:8px;margin:7px 0 0;font-size:12px;font-weight:600;color:#c4d4c8}.admin-current-time-option input{width:auto;margin:0}.admin-last-update-field .field-hint{font-size:11px;margin:5px 0 0;color:#9aafa0}
