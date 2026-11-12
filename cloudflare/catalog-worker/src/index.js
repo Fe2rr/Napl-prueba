@@ -586,9 +586,9 @@ async function resolveGitHubVersion(info, token) {
     return { key: info.key, version, date: pushedAt, source: 'Tag' };
 }
 
-async function updateGitHubVersions(env) {
+async function updateGitHubVersions(env, offset = 0) {
     if (!env.GITHUB_TOKEN) throw new Error('GITHUB_TOKEN secret is not configured.');
-    const rowsResult = await env.DB.prepare("SELECT game_slug, port_id, url FROM ports WHERE url IS NOT NULL AND (LOWER(TRIM(url)) LIKE 'https://github.com/%' OR LOWER(TRIM(url)) LIKE 'http://github.com/%' OR LOWER(TRIM(url)) LIKE 'https://www.github.com/%' OR LOWER(TRIM(url)) LIKE 'http://www.github.com/%')").all();
+    const rowsResult = await env.DB.prepare("SELECT game_slug, port_id, url FROM ports WHERE url IS NOT NULL AND (LOWER(TRIM(url)) LIKE 'https://github.com/%' OR LOWER(TRIM(url)) LIKE 'http://github.com/%' OR LOWER(TRIM(url)) LIKE 'https://www.github.com/%' OR LOWER(TRIM(url)) LIKE 'http://www.github.com/%') ORDER BY game_slug, port_id").all();
     const rows = rowsResult.results || [];
     const repoMap = new Map();
     for (const row of rows) {
@@ -596,27 +596,30 @@ async function updateGitHubVersions(env) {
         if (info && !repoMap.has(info.key)) repoMap.set(info.key, info);
     }
     const repos = Array.from(repoMap.values());
+    const totalRepositories = repos.length;
+    const startOffset = Math.max(0, Math.min(totalRepositories, Number.parseInt(offset, 10) || 0));
+    // A repository may require up to three GitHub requests (release, tags, repository).
+    // Keep each Worker invocation comfortably below the default subrequest limit.
+    const batchSize = 12;
+    const batch = repos.slice(startOffset, startOffset + batchSize);
+    const resolved = await Promise.all(batch.map((info) => resolveGitHubVersion(info, env.GITHUB_TOKEN)));
     const results = new Map();
     const errors = [];
     let withoutVersion = 0;
-    const batchSize = 5;
-    for (let offset = 0; offset < repos.length; offset += batchSize) {
-        const batch = repos.slice(offset, offset + batchSize);
-        const resolved = await Promise.all(batch.map((info) => resolveGitHubVersion(info, env.GITHUB_TOKEN)));
-        for (const item of resolved) {
-            if (item.version) results.set(item.key, item);
-            else if (item.error === 'no_release_or_tag') withoutVersion++;
-            else if (item.error) errors.push({ repository: item.key, error: item.error, detail: item.detail || '' });
-        }
+    for (const item of resolved) {
+        if (item.version) results.set(item.key, item);
+        else if (item.error === 'no_release_or_tag') withoutVersion++;
+        else if (item.error) errors.push({ repository: item.key, error: item.error, detail: item.detail || '' });
     }
 
+    const batchKeys = new Set(batch.map((info) => info.key));
     const statements = [];
     let updatedRows = 0;
     let versionRows = 0;
     let dateRows = 0;
     for (const row of rows) {
         const info = normalizeGitHubRepo(row.url);
-        if (!info) continue;
+        if (!info || !batchKeys.has(info.key)) continue;
         const result = results.get(info.key);
         if (!result?.version) continue;
         const assignments = ['version = ?'];
@@ -631,14 +634,31 @@ async function updateGitHubVersions(env) {
         updatedRows++;
     }
     for (let i = 0; i < statements.length; i += 50) await env.DB.batch(statements.slice(i, i + 50));
-    return { success: true, uniqueRepositories: repos.length, repositoriesWithVersion: results.size, withoutVersion, updatedRows, versionRows, dateRows, errors };
+
+    const nextOffset = startOffset + batch.length;
+    return {
+        success: true,
+        uniqueRepositories: totalRepositories,
+        processedRepositories: batch.length,
+        nextOffset,
+        complete: nextOffset >= totalRepositories,
+        repositoriesWithVersion: results.size,
+        withoutVersion,
+        updatedRows,
+        versionRows,
+        dateRows,
+        errors
+    };
 }
 
 async function handleUpdateGitHubVersions(request, env) {
     const denied = requireAdmin(request, env);
     if (denied) return denied;
     if (!env.GITHUB_TOKEN) return jsonResponse({ success: false, error: 'GITHUB_TOKEN secret is not configured.' }, 503);
-    const result = await updateGitHubVersions(env);
+    let body = {};
+    try { body = await request.json(); } catch (_) {}
+    const offset = Math.max(0, Number.parseInt(body.offset, 10) || 0);
+    const result = await updateGitHubVersions(env, offset);
     return jsonResponse(result, 200, { 'Cache-Control': 'no-store' });
 }
 
