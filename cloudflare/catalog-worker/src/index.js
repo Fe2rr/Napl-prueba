@@ -705,6 +705,7 @@ async function updateDevelopers(env) {
         developers.add(info.owner.toLowerCase());
     }
     if (updates.length) await updateSheetCells(env, updates);
+    if (updates.length && env.CATALOG_KV) await refreshCatalogCache(env);
     return {
         success: true,
         scannedRows: sheet.rows.length,
@@ -1297,14 +1298,21 @@ async function handleAdminSavePort(request, env) {
     const gameName = clean(body.gameName, 180);
     const requestedGameSlug = clean(body.gameSlug, 180);
     const gameSlug = requestedGameSlug === "__new__" ? importSlug(gameName) : requestedGameSlug;
-    const portId = clean(body.portId, 120);
+    let portId = clean(body.portId, 120);
     const originalPortId = clean(body.originalPortId, 120);
     const platform = clean(body.platform, 100);
-    if (!gameName || !gameSlug || !portId || !platform) {
+    if (!gameName || !gameSlug || !platform) {
         return jsonResponse({ success: false, error: "Game name, game and platform are required." }, 400);
     }
 
     const sheet = await readSheetRows(env);
+    if (!portId) {
+        const ids = new Set(sheet.rows.map((item) => String(item.values[sheet.headerMap.get("PORTS_ID")] || "").trim()));
+        const prefix = gameSlug.slice(0, 85) + (body.isUnofficialPort === true ? "-unofficial-port-" : "-port-");
+        let sequence = 1;
+        while (ids.has(prefix + sequence)) sequence++;
+        portId = prefix + sequence;
+    }
     const headers = sheet.headers;
     const indexOf = (...aliases) => {
         for (const alias of aliases) {
