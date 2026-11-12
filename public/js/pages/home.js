@@ -14,6 +14,7 @@ import { loadCatalog } from "../core/data.js";
 import { fetchPopularPeriod } from "../services/popularity.js";
 import { initNavigation } from "../components/navigation.js";
 import { initSearch } from "../components/search.js";
+import { initThemeToggle } from "../components/theme.js";
 import {
     createHomeGameCard,
     getRepresentativePort,
@@ -23,6 +24,8 @@ import {
     renderListSkeletons,
 } from "../components/loading.js";
 import { createCategoryController } from "./categories.js";
+
+initThemeToggle();
 
 const state = {
     games: [],

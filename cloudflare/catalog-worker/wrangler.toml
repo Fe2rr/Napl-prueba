@@ -2,6 +2,9 @@ name = "napl-catalog-worker"
 main = "src/index.js"
 compatibility_date = "2025-01-01"
 
+[triggers]
+crons = ["0 * * * *"]
+
 # Main catalog: games, ports, platforms, developers, categories and visits.
 [[d1_databases]]
 binding = "DB"

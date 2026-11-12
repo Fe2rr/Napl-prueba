@@ -24,7 +24,7 @@ function setTheme(theme, button) {
 
     const meta = document.querySelector('meta[name="theme-color"]');
     if (meta) {
-        meta.setAttribute("content", mode === "light" ? "#ffffff" : "#040a08");
+        meta.setAttribute("content", mode === "light" ? "#ffffff" : "#11221b");
     }
 
     if (button) {

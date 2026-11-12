@@ -15,9 +15,11 @@ import {
 } from "../services/compatibility.js";
 import { initNavigation } from "../components/navigation.js";
 import { initSearch } from "../components/search.js";
+import { initThemeToggle } from "../components/theme.js";
 import { renderGameDetailSkeletons } from "../components/loading.js";
 import { displayGame } from "./game-render.js";
 
+initThemeToggle();
 const searchController = initSearch();
 const navController = initNavigation({
     mode: "game",

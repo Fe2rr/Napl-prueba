@@ -285,43 +285,86 @@ async function handlePostCompatibility(request, env) {
 }
 
 async function handleGetPopular(url, env) {
-    const period = (url.searchParams.get("period") || url.searchParams.get("popular") || "week")
-        .trim()
-        .toLowerCase();
+    const requestedPeriod = (url.searchParams.get("period") || url.searchParams.get("popular") || "week")
+        .trim().toLowerCase();
+    const period = ["week", "month", "alltime"].includes(requestedPeriod) ? requestedPeriod : "week";
+
+    await env.DB.prepare(`CREATE TABLE IF NOT EXISTS game_visit_settings (
+        setting_key TEXT PRIMARY KEY,
+        setting_value TEXT NOT NULL
+    )`).run();
 
     let rows;
     if (period === "alltime") {
+        // Historical total comes from Google Sheets. New D1 events are added once.
+        // game_visit_totals is intentionally excluded because it contains old seed values.
         rows = await env.DB.prepare(
-            `SELECT t.game_slug AS slug,
-                    COALESCE(NULLIF(t.game_name, ''), g.name, t.game_slug) AS game,
-                    t.visits + COALESCE(l.visits, 0) AS visits
-             FROM game_visit_totals t
-             LEFT JOIN game_visit_legacy_totals l ON l.game_slug = t.game_slug
-             LEFT JOIN games g ON g.slug = t.game_slug
-             WHERE t.visits + COALESCE(l.visits, 0) > 0
-             UNION ALL
-             SELECT l.game_slug AS slug, COALESCE(g.name, l.game_name, l.game_slug) AS game, l.visits
-             FROM game_visit_legacy_totals l
-             LEFT JOIN games g ON g.slug = l.game_slug
-             WHERE l.visits > 0
-               AND NOT EXISTS (SELECT 1 FROM game_visit_totals t WHERE t.game_slug = l.game_slug)
+            `SELECT slug, MAX(game) AS game, SUM(visits) AS visits
+             FROM (
+                 SELECT l.game_slug AS slug,
+                        COALESCE(NULLIF(g.name, ''), NULLIF(l.game_name, ''), l.game_slug) AS game,
+                        l.visits AS visits
+                 FROM game_visit_legacy_totals l
+                 LEFT JOIN games g ON g.slug = l.game_slug
+                 UNION ALL
+                 SELECT v.game_slug AS slug,
+                        COALESCE(MAX(NULLIF(g.name, '')), MAX(NULLIF(v.game_name, '')), v.game_slug) AS game,
+                        COUNT(*) AS visits
+                 FROM game_visits v
+                 LEFT JOIN games g ON g.slug = v.game_slug
+                 GROUP BY v.game_slug
+             )
+             GROUP BY slug
+             HAVING SUM(visits) > 0
+             ORDER BY visits DESC, slug ASC
+             LIMIT 100`
+        ).all();
+    } else if (period === "month") {
+        // Daily history covers complete days through its latest imported date.
+        // Count live events only after that cutoff to prevent overlap/double counting.
+        rows = await env.DB.prepare(
+            `SELECT slug, MAX(game) AS game, SUM(visits) AS visits
+             FROM (
+                 SELECT h.game_slug AS slug,
+                        COALESCE(MAX(NULLIF(g.name, '')), MAX(NULLIF(h.game_name, '')), h.game_slug) AS game,
+                        SUM(h.visits) AS visits
+                 FROM game_visit_daily_totals h
+                 LEFT JOIN games g ON g.slug = h.game_slug
+                 WHERE h.visit_date >= date('now', '-29 days')
+                 GROUP BY h.game_slug
+                 UNION ALL
+                 SELECT v.game_slug AS slug,
+                        COALESCE(MAX(NULLIF(g.name, '')), MAX(NULLIF(v.game_name, '')), v.game_slug) AS game,
+                        COUNT(*) AS visits
+                 FROM game_visits v
+                 LEFT JOIN games g ON g.slug = v.game_slug
+                 WHERE v.visited_at >= datetime('now', '-30 days')
+                   AND date(v.visited_at) > COALESCE(
+                       (SELECT MAX(visit_date) FROM game_visit_daily_totals),
+                       '0000-00-00'
+                   )
+                 GROUP BY v.game_slug
+             )
+             GROUP BY slug
+             HAVING SUM(visits) > 0
              ORDER BY visits DESC, slug ASC
              LIMIT 100`
         ).all();
     } else {
-        const modifier = period === "month" ? "-30 days" : "-7 days";
+        // Week intentionally starts fresh: only new D1 visit events count.
         rows = await env.DB.prepare(
             `SELECT game_slug AS slug,
                     COALESCE(MAX(NULLIF(game_name, '')), game_slug) AS game,
                     COUNT(*) AS visits
              FROM game_visits
-             WHERE visited_at >= datetime('now', ?)
+             WHERE visited_at >= COALESCE(
+                 (SELECT setting_value FROM game_visit_settings WHERE setting_key = 'week_reset_at'),
+                 datetime('now')
+             )
              GROUP BY game_slug
              ORDER BY visits DESC, game_slug ASC
              LIMIT 100`
-        )
-            .bind(modifier)
-            .all();
+        ).all();
     }
 
     return jsonResponse(
@@ -335,11 +378,10 @@ async function handleGetPopular(url, env) {
             })),
         },
         200,
-        {
-            "Cache-Control": "public, max-age=30, s-maxage=60",
-        }
+        { "Cache-Control": "public, max-age=30, s-maxage=60" }
     );
 }
+
 
 async function handleRecordVisit(request, url, env) {
     let rawGame = url.searchParams.get("game") || "";
@@ -457,6 +499,604 @@ async function handleReportLink(request, env) {
     return jsonResponse({ success: true, portId, reason });
 }
 
+function normalizeGitHubRepo(value) {
+    const match = String(value || '').trim().match(/^https?:\/\/(?:www\.)?github\.com\/([^/?#]+)\/([^/?#]+)/i);
+    if (!match) return null;
+    const owner = match[1];
+    const repo = match[2].replace(/\.git$/i, '');
+    const blockedOwners = ['settings','search','login','logout','signup','explore','marketplace','topics','orgs','users','collections','sponsors','notifications','new'];
+    const blockedRepos = /^(issues|pulls|projects|actions|releases|tags|branches|wiki|tree|blob|commit|commits)$/i;
+    if (!owner || !repo || blockedOwners.includes(owner.toLowerCase()) || blockedRepos.test(repo)) return null;
+    return { owner, repo, key: owner.toLowerCase() + '/' + repo.toLowerCase() };
+}
+
+function githubApiUrl(info, suffix = '') {
+    return 'https://api.github.com/repos/' + encodeURIComponent(info.owner) + '/' + encodeURIComponent(info.repo) + suffix;
+}
+
+function formatGitHubDate(value) {
+    const date = new Date(value);
+    if (!Number.isFinite(date.getTime())) return '';
+    const parts = new Intl.DateTimeFormat('en-US', { timeZone: 'America/Montevideo', year: 'numeric', month: 'long', day: 'numeric' }).formatToParts(date);
+    const part = (type) => parts.find((item) => item.type === type)?.value || '';
+    return part('year') + ', ' + part('month') + ' ' + Number(part('day'));
+}
+
+async function githubRequest(url, token) {
+    return fetch(url, {
+        headers: { Authorization: 'Bearer ' + token, Accept: 'application/vnd.github+json', 'X-GitHub-Api-Version': '2022-11-28' },
+        cf: { cacheTtl: 0, cacheEverything: false }
+    });
+}
+
+async function resolveGitHubVersion(info, token) {
+    let releaseResponse;
+    try { releaseResponse = await githubRequest(githubApiUrl(info, '/releases/latest'), token); }
+    catch (error) { return { key: info.key, error: 'release_network_error' }; }
+
+    if (releaseResponse.status === 200) {
+        try {
+            const release = await releaseResponse.json();
+            const version = String(release.tag_name || release.name || '').trim();
+            if (version) return { key: info.key, version, date: release.published_at || release.created_at || '', source: 'Release' };
+        } catch (_) {}
+    } else if (releaseResponse.status !== 404) {
+        return { key: info.key, error: 'release_http_' + releaseResponse.status };
+    }
+
+    let tagsResponse;
+    try { tagsResponse = await githubRequest(githubApiUrl(info, '/tags?per_page=1'), token); }
+    catch (error) { return { key: info.key, error: 'tags_network_error' }; }
+    if (!tagsResponse.ok) return { key: info.key, error: 'tags_http_' + tagsResponse.status };
+
+    let tags;
+    try { tags = await tagsResponse.json(); } catch (_) { return { key: info.key, error: 'invalid_tags_json' }; }
+    if (!Array.isArray(tags) || !tags.length) return { key: info.key, error: 'no_release_or_tag' };
+    const version = String(tags[0]?.name || '').trim();
+    if (!version) return { key: info.key, error: 'empty_tag' };
+
+    let pushedAt = '';
+    try {
+        const repositoryResponse = await githubRequest(githubApiUrl(info), token);
+        if (repositoryResponse.ok) {
+            const repository = await repositoryResponse.json();
+            pushedAt = repository.pushed_at || '';
+        }
+    } catch (_) {}
+    return { key: info.key, version, date: pushedAt, source: 'Tag' };
+}
+
+async function updateGitHubVersions(env) {
+    if (!env.GITHUB_TOKEN) throw new Error('GITHUB_TOKEN secret is not configured.');
+    const rowsResult = await env.DB.prepare("SELECT game_slug, port_id, url FROM ports WHERE url IS NOT NULL AND TRIM(url) <> ''").all();
+    const rows = rowsResult.results || [];
+    const repoMap = new Map();
+    for (const row of rows) {
+        const info = normalizeGitHubRepo(row.url);
+        if (info && !repoMap.has(info.key)) repoMap.set(info.key, info);
+    }
+    const repos = Array.from(repoMap.values());
+    const results = new Map();
+    const errors = [];
+    const batchSize = 20;
+    for (let offset = 0; offset < repos.length; offset += batchSize) {
+        const batch = repos.slice(offset, offset + batchSize);
+        const resolved = await Promise.all(batch.map((info) => resolveGitHubVersion(info, env.GITHUB_TOKEN)));
+        for (const item of resolved) {
+            if (item.version) results.set(item.key, item);
+            else if (item.error) errors.push({ repository: item.key, error: item.error });
+        }
+    }
+
+    const statements = [];
+    let updatedRows = 0;
+    let versionRows = 0;
+    let dateRows = 0;
+    for (const row of rows) {
+        const info = normalizeGitHubRepo(row.url);
+        if (!info) continue;
+        const result = results.get(info.key);
+        if (!result?.version) continue;
+        const assignments = ['version = ?'];
+        const values = [String(result.version)];
+        versionRows++;
+        if (result.date) {
+            const formattedDate = formatGitHubDate(result.date);
+            if (formattedDate) { assignments.push('last_update = ?'); values.push(formattedDate); dateRows++; }
+        }
+        values.push(row.game_slug, row.port_id);
+        statements.push(env.DB.prepare('UPDATE ports SET ' + assignments.join(', ') + ' WHERE game_slug = ? AND port_id = ?').bind(...values));
+        updatedRows++;
+    }
+    for (let i = 0; i < statements.length; i += 50) await env.DB.batch(statements.slice(i, i + 50));
+    return { success: true, uniqueRepositories: repos.length, repositoriesWithVersion: results.size, updatedRows, versionRows, dateRows, errors };
+}
+
+async function handleUpdateGitHubVersions(request, env) {
+    const denied = requireAdmin(request, env);
+    if (denied) return denied;
+    if (!env.GITHUB_TOKEN) return jsonResponse({ success: false, error: 'GITHUB_TOKEN secret is not configured.' }, 503);
+    const result = await updateGitHubVersions(env);
+    return jsonResponse(result, 200, { 'Cache-Control': 'no-store' });
+}
+
+async function updateDevelopers(env) {
+    const rowsResult = await env.DB.prepare(
+        "SELECT game_slug, port_id, url FROM ports WHERE url IS NOT NULL AND TRIM(url) <> ''"
+    ).all();
+
+    const statements = [];
+    let updatedRows = 0;
+    let uniqueDevelopers = new Set();
+
+    for (const row of rowsResult.results || []) {
+        const info = normalizeGitHubRepo(row.url);
+        if (!info) continue;
+
+        statements.push(
+            env.DB.prepare(
+                "UPDATE ports SET developer = ? WHERE game_slug = ? AND port_id = ?"
+            ).bind(info.owner, row.game_slug, row.port_id)
+        );
+        uniqueDevelopers.add(info.owner.toLowerCase());
+        updatedRows++;
+    }
+
+    for (let i = 0; i < statements.length; i += 50) {
+        await env.DB.batch(statements.slice(i, i + 50));
+    }
+
+    return {
+        success: true,
+        scannedRows: (rowsResult.results || []).length,
+        updatedRows,
+        uniqueDevelopers: uniqueDevelopers.size
+    };
+}
+
+async function handleUpdateDevelopers(request, env) {
+    const denied = requireAdmin(request, env);
+    if (denied) return denied;
+    const result = await updateDevelopers(env);
+    return jsonResponse(result, 200, { "Cache-Control": "no-store" });
+}
+
+function limpiarEntidadesLB(texto) {
+    return String(texto || "")
+        .replace(/&amp;/gi, "&")
+        .replace(/&quot;/gi, '"')
+        .replace(/&#39;|&apos;/gi, "'")
+        .replace(/&nbsp;/gi, " ")
+        .replace(/&lt;/gi, "<")
+        .replace(/&gt;/gi, ">")
+        .replace(/&#(\d+);/g, (_, n) => {
+            const code = Number(n);
+            return code >= 0 && code <= 0x10ffff ? String.fromCodePoint(code) : "";
+        })
+        .replace(/&#x([0-9a-f]+);/gi, (_, n) => {
+            const code = parseInt(n, 16);
+            return code >= 0 && code <= 0x10ffff ? String.fromCodePoint(code) : "";
+        });
+}
+
+function limpiarHTMLLB(texto) {
+    return limpiarEntidadesLB(
+        String(texto || "")
+            .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, " ")
+            .replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, " ")
+            .replace(/<br\s*\/?\s*>/gi, " ")
+            .replace(/<\/(?:p|div|li|span)>/gi, " ")
+            .replace(/<[^>]+>/g, " ")
+    ).replace(/\s+/g, " ").trim();
+}
+
+function buscarCampoHTMLLB(html, etiquetas) {
+    for (const etiqueta of etiquetas) {
+        const escaped = etiqueta;
+
+        const patterns = [
+            new RegExp("<[^>]*>\\s*" + escaped + "\\s*:?\\s*</[^>]+>\\s*<[^>]*>([\\s\\S]*?)</[^>]+>", "i"),
+            new RegExp(escaped + "\\s*:\\s*([^<\\r\\n]+)", "i")
+        ];
+        for (const pattern of patterns) {
+            const match = html.match(pattern);
+            if (match?.[1]) {
+                const value = limpiarHTMLLB(match[1]);
+                if (value) return value;
+            }
+        }
+    }
+    return "";
+}
+
+function extraerOverviewLB(html) {
+    const heading = /<h[1-6][^>]*>\s*Overview\s*<\/h[1-6]>/i.exec(html);
+    if (!heading) return "";
+    const start = heading.index + heading[0].length;
+    const rest = html.slice(start);
+    const nextHeading = /<h[1-6][^>]*>[\s\S]*?<\/h[1-6]>/i.exec(rest);
+    const section = nextHeading ? rest.slice(0, nextHeading.index) : rest.slice(0, 12000);
+    const paragraphs = [];
+    const paragraphRegex = /<p\b[^>]*>([\s\S]*?)<\/p>/gi;
+    let match;
+    while ((match = paragraphRegex.exec(section)) !== null) {
+        const value = limpiarHTMLLB(match[1]);
+        if (value) paragraphs.push(value);
+    }
+    return paragraphs.length ? paragraphs.join("|||") : limpiarHTMLLB(section).slice(0, 3000);
+}
+
+function obtenerAtributoLB(tag, name) {
+    const escaped = name;
+
+    const match = tag.match(new RegExp("\\b" + escaped + "\\s*=\\s*[\"']([^\"']*)[\"']", "i"));
+    return match ? limpiarEntidadesLB(match[1]) : "";
+}
+
+function esURLImagenLB(value) {
+    const url = String(value || "").trim();
+    return /^https?:\/\/[^"'<>\s]+\.(?:jpg|jpeg|png|webp)(?:[?#][^"'<>\s]*)?$/i.test(url);
+}
+
+function extraerPortadaFrontalLB(html) {
+    const images = html.match(/<img\b[^>]*>/gi) || [];
+    for (const tag of images) {
+        const identity = [
+            obtenerAtributoLB(tag, "alt"),
+            obtenerAtributoLB(tag, "title"),
+            obtenerAtributoLB(tag, "data-title")
+        ].join(" ");
+        if (/Box\s*-\s*Front/i.test(identity)) {
+            const url = obtenerAtributoLB(tag, "src") || obtenerAtributoLB(tag, "data-src");
+            if (esURLImagenLB(url)) return url;
+        }
+    }
+
+    const index = html.search(/Box\s*-\s*Front/i);
+    if (index >= 0) {
+        const fragment = html.slice(Math.max(0, index - 2500), Math.min(html.length, index + 2500));
+        const nearbyImages = fragment.match(/<img\b[^>]*>/gi) || [];
+        for (let i = nearbyImages.length - 1; i >= 0; i--) {
+            const tag = nearbyImages[i];
+            const identity = [
+                obtenerAtributoLB(tag, "alt"),
+                obtenerAtributoLB(tag, "title"),
+                obtenerAtributoLB(tag, "data-title")
+            ].join(" ");
+            if (/Box\s*-\s*(Back|3D|Spine)/i.test(identity)) continue;
+            const url = obtenerAtributoLB(tag, "src") || obtenerAtributoLB(tag, "data-src");
+            if (esURLImagenLB(url)) return url;
+        }
+    }
+    return "";
+}
+
+function extraerMetadataLaunchBox(html) {
+    const releaseDate = buscarCampoHTMLLB(html, ["Release Date", "Release Year", "Year"]);
+    const yearMatch = releaseDate.match(/\b(?:19|20)\d{2}\b/);
+    return {
+        year: yearMatch ? yearMatch[0] : "",
+        genre: buscarCampoHTMLLB(html, ["Genre", "Genres"]),
+        description: extraerOverviewLB(html),
+        cover: extraerPortadaFrontalLB(html)
+    };
+}
+
+async function obtenerMetadataLaunchBox(url) {
+    const response = await fetch(url, {
+        headers: { "User-Agent": "Mozilla/5.0 (compatible; NAPL/1.0)", "Accept": "text/html" },
+        cf: { cacheTtl: 0, cacheEverything: false }
+    });
+    if (!response.ok) return { error: "http_" + response.status };
+    const html = await response.text();
+    if (html.length > 3_000_000) return { error: "html_too_large" };
+    return { metadata: extraerMetadataLaunchBox(html) };
+}
+
+async function updateLaunchBoxData(env) {
+    const result = await env.DB.prepare(
+        `SELECT slug, launchbox_url, year, genre, description, cover_url
+         FROM games
+         WHERE launchbox_url IS NOT NULL AND TRIM(launchbox_url) <> ''
+         ORDER BY name COLLATE NOCASE ASC`
+    ).all();
+
+    const unique = new Map();
+    for (const row of result.results || []) {
+        const url = String(row.launchbox_url || "").trim();
+        if (!/^https?:\/\/gamesdb\.launchbox-app\.com\/games\/details\//i.test(url)) continue;
+        const needsData = !String(row.year || "").trim() ||
+            !String(row.genre || "").trim() ||
+            !String(row.description || "").trim() ||
+            !String(row.cover_url || "").trim();
+        if (needsData && !unique.has(url)) unique.set(url, row);
+    }
+
+    const candidates = Array.from(unique.entries()).slice(0, 300);
+    const errors = [];
+    let updatedGames = 0;
+    let filledFields = 0;
+    const concurrency = 5;
+
+    for (let offset = 0; offset < candidates.length; offset += concurrency) {
+        const batch = candidates.slice(offset, offset + concurrency);
+        const fetched = await Promise.all(batch.map(async ([url, row]) => {
+            try {
+                return { url, row, ...(await obtenerMetadataLaunchBox(url)) };
+            } catch (error) {
+                return { url, row, error: String(error?.message || error).slice(0, 180) };
+            }
+        }));
+
+        const statements = [];
+        for (const item of fetched) {
+            if (item.error || !item.metadata) {
+                errors.push({ slug: item.row.slug, error: item.error || "empty_response" });
+                continue;
+            }
+            const m = item.metadata;
+            const values = [m.year || null, m.genre || null, m.description || null, m.cover || null];
+            if (!values.some(Boolean)) {
+                errors.push({ slug: item.row.slug, error: "no_metadata_found" });
+                continue;
+            }
+
+            statements.push(env.DB.prepare(
+                `UPDATE games SET
+                    year = CASE WHEN TRIM(COALESCE(year, '')) = '' AND ? IS NOT NULL THEN ? ELSE year END,
+                    genre = CASE WHEN TRIM(COALESCE(genre, '')) = '' AND ? IS NOT NULL THEN ? ELSE genre END,
+                    description = CASE WHEN TRIM(COALESCE(description, '')) = '' AND ? IS NOT NULL THEN ? ELSE description END,
+                    cover_url = CASE WHEN TRIM(COALESCE(cover_url, '')) = '' AND ? IS NOT NULL THEN ? ELSE cover_url END
+                 WHERE slug = ?`
+            ).bind(
+                values[0], values[0], values[1], values[1],
+                values[2], values[2], values[3], values[3], item.row.slug
+            ));
+            filledFields += values.filter(Boolean).length;
+            updatedGames++;
+        }
+        if (statements.length) await env.DB.batch(statements);
+        if (offset + concurrency < candidates.length) {
+            await new Promise(resolve => setTimeout(resolve, 1500));
+        }
+    }
+
+    return {
+        success: true,
+        candidates: candidates.length,
+        updatedGames,
+        filledFields,
+        errors
+    };
+}
+
+async function handleUpdateLaunchBoxData(request, env) {
+    const denied = requireAdmin(request, env);
+    if (denied) return denied;
+    const result = await updateLaunchBoxData(env);
+    return jsonResponse(result, 200, { "Cache-Control": "no-store" });
+}
+
+function identificarEnlaceSteam(url) {
+    const value = String(url || "").trim().toLowerCase();
+    if (/(^|\/\/)(store\.)?steampowered\.com\//i.test(value) ||
+        /(^|\/\/)steamcommunity\.com\//i.test(value)) return "steam";
+    if (/(^|\/\/)(www\.)?gamesdb\.launchbox-app\.com\//i.test(value) ||
+        /(^|\/\/)(www\.)?launchbox-app\.com\//i.test(value) ||
+        /(^|\/\/)(www\.)?launchbox\.com\//i.test(value)) return "launchbox";
+    return "unknown";
+}
+
+function extraerSteamAppId(url) {
+    const match = String(url || "").trim().match(/store\.steampowered\.com\/app\/(\d+)/i);
+    return match ? match[1] : "";
+}
+
+function decodificarHTMLSteam(text) {
+    return String(text || "")
+        .replace(/&amp;/gi, "&")
+        .replace(/&nbsp;/gi, " ")
+        .replace(/&quot;/gi, '"')
+        .replace(/&#39;|&apos;/gi, "'")
+        .replace(/&lt;/gi, "<")
+        .replace(/&gt;/gi, ">")
+        .replace(/&#(\d+);/g, (_, code) => {
+            const n = Number(code);
+            return n >= 0 && n <= 0x10ffff ? String.fromCodePoint(n) : "";
+        })
+        .replace(/&#x([0-9a-f]+);/gi, (_, code) => {
+            const n = parseInt(code, 16);
+            return n >= 0 && n <= 0x10ffff ? String.fromCodePoint(n) : "";
+        });
+}
+
+function limpiarDescripcionSteam(text) {
+    if (!text) return "";
+    let html = String(text)
+        .replace(/<br\s*\/?\s*>/gi, "\n")
+        .replace(/<\/p\s*>/gi, "\n\n")
+        .replace(/<p\b[^>]*>/gi, "")
+        .replace(/<li\b[^>]*>/gi, "\n")
+        .replace(/<\/li\s*>/gi, "\n")
+        .replace(/<[^>]+>/g, " ");
+    html = decodificarHTMLSteam(html)
+        .replace(/\r\n?/g, "\n")
+        .replace(/[ \t]+\n/g, "\n")
+        .replace(/\n[ \t]+/g, "\n")
+        .replace(/[ \t]{2,}/g, " ")
+        .trim();
+    const paragraphs = html.split(/\n\s*\n/)
+        .map(p => p.replace(/\s*\n\s*/g, " ").trim())
+        .filter(Boolean);
+    return paragraphs.length > 1 ? paragraphs.join("|||") : html.replace(/\s*\n\s*/g, " ").trim();
+}
+
+async function obtenerMetadatosSteam(appId) {
+    const url = "https://store.steampowered.com/api/appdetails/?appids=" +
+        encodeURIComponent(appId) + "&l=english&cc=us";
+    const response = await fetch(url, {
+        method: "GET",
+        headers: { "Accept": "application/json", "User-Agent": "Mozilla/5.0 (compatible; NAPL/1.0)" },
+        cf: { cacheTtl: 21600, cacheEverything: true }
+    });
+    if (!response.ok) return { error: "steam_http_" + response.status };
+    const payload = await response.json();
+    const entry = payload && payload[String(appId)];
+    if (!entry || !entry.success || !entry.data || entry.data.type !== "game") {
+        return { notFound: true };
+    }
+
+    const game = entry.data;
+    const releaseDate = String(game.release_date?.date || "");
+    const yearMatch = releaseDate.match(/\b(?:19|20)\d{2}\b/);
+    const genre = Array.isArray(game.genres)
+        ? game.genres.map(item => item?.description || "").filter(Boolean).join(", ")
+        : "";
+    const description = limpiarDescripcionSteam(game.about_the_game || game.short_description || "");
+
+    return {
+        metadata: {
+            year: yearMatch ? yearMatch[0] : "",
+            genre,
+            cover: "https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/" + appId + "/library_600x900.jpg",
+            description
+        }
+    };
+}
+
+async function updateSteamGameData(env) {
+    const result = await env.DB.prepare(
+        `SELECT slug, name, launchbox_url, year, genre, description, cover_url
+         FROM games
+         WHERE launchbox_url IS NOT NULL AND TRIM(launchbox_url) <> ''
+         ORDER BY name COLLATE NOCASE ASC`
+    ).all();
+
+    const unique = new Map();
+    let launchBoxLinks = 0;
+    let invalidLinks = 0;
+    for (const row of result.results || []) {
+        const url = String(row.launchbox_url || "").trim();
+        const source = identificarEnlaceSteam(url);
+        if (source === "launchbox") {
+            launchBoxLinks++;
+            continue;
+        }
+        if (source !== "steam") {
+            invalidLinks++;
+            continue;
+        }
+        const appId = extraerSteamAppId(url);
+        if (!appId) {
+            invalidLinks++;
+            continue;
+        }
+        const needsData = !String(row.year || "").trim() ||
+            !String(row.genre || "").trim() ||
+            !String(row.cover_url || "").trim() ||
+            !String(row.description || "").trim();
+        if (needsData && !unique.has(appId)) unique.set(appId, row);
+    }
+
+    const candidates = Array.from(unique.entries()).slice(0, 500);
+    const errors = [];
+    let completedGames = 0;
+    let failedGames = 0;
+    let filledFields = 0;
+    const concurrency = 5;
+
+    for (let offset = 0; offset < candidates.length; offset += concurrency) {
+        const batch = candidates.slice(offset, offset + concurrency);
+        const fetched = await Promise.all(batch.map(async ([appId, row]) => {
+            try {
+                return { appId, row, ...(await obtenerMetadatosSteam(appId)) };
+            } catch (error) {
+                return { appId, row, error: String(error?.message || error).slice(0, 180) };
+            }
+        }));
+
+        const statements = [];
+        for (const item of fetched) {
+            if (item.error || item.notFound || !item.metadata) {
+                failedGames++;
+                errors.push({
+                    appId: item.appId,
+                    game: item.row.name,
+                    error: item.error || (item.notFound ? "steam_game_not_found_or_not_a_game" : "empty_response")
+                });
+                continue;
+            }
+            const m = item.metadata;
+            const values = [m.year || null, m.genre || null, m.cover || null, m.description || null];
+            if (!values.some(Boolean)) {
+                failedGames++;
+                errors.push({ appId: item.appId, game: item.row.name, error: "no_metadata_found" });
+                continue;
+            }
+
+            statements.push(env.DB.prepare(
+                `UPDATE games SET
+                    year = CASE WHEN TRIM(COALESCE(year, '')) = '' AND ? IS NOT NULL THEN ? ELSE year END,
+                    genre = CASE WHEN TRIM(COALESCE(genre, '')) = '' AND ? IS NOT NULL THEN ? ELSE genre END,
+                    cover_url = CASE WHEN TRIM(COALESCE(cover_url, '')) = '' AND ? IS NOT NULL THEN ? ELSE cover_url END,
+                    description = CASE WHEN TRIM(COALESCE(description, '')) = '' AND ? IS NOT NULL THEN ? ELSE description END
+                 WHERE slug = ?`
+            ).bind(
+                values[0], values[0], values[1], values[1],
+                values[2], values[2], values[3], values[3], item.row.slug
+            ));
+            completedGames++;
+            filledFields += values.filter(Boolean).length;
+        }
+        if (statements.length) await env.DB.batch(statements);
+        if (offset + concurrency < candidates.length) {
+            await new Promise(resolve => setTimeout(resolve, 600));
+        }
+    }
+
+    return {
+        success: true,
+        scannedGames: (result.results || []).length,
+        steamCandidates: candidates.length,
+        launchBoxLinksSkipped: launchBoxLinks,
+        unrecognizedLinks: invalidLinks,
+        completedGames,
+        failedGames,
+        filledFields,
+        errors
+    };
+}
+
+async function handleUpdateSteamGameData(request, env) {
+    const denied = requireAdmin(request, env);
+    if (denied) return denied;
+    const result = await updateSteamGameData(env);
+    return jsonResponse(result, 200, { "Cache-Control": "no-store" });
+}
+async function registerMissingPortDates(env) {
+    const result = await env.DB.prepare(
+        "UPDATE ports " +
+        "SET date_added = strftime('%Y-%m-%d %H:%M:%S', 'now', '-3 hours') " +
+        "WHERE TRIM(COALESCE(date_added, '')) = '' " +
+        "AND (TRIM(COALESCE(port_id, '')) <> '' OR TRIM(COALESCE(game_slug, '')) <> '' OR " +
+        "TRIM(COALESCE(platform, '')) <> '' OR TRIM(COALESCE(project, '')) <> '' OR " +
+        "TRIM(COALESCE(link, '')) <> '' OR TRIM(COALESCE(url, '')) <> '' OR " +
+        "TRIM(COALESCE(developer, '')) <> '' OR TRIM(COALESCE(version, '')) <> '' OR " +
+        "TRIM(COALESCE(last_update, '')) <> '' OR TRIM(COALESCE(needs_files, '')) <> '' OR " +
+        "TRIM(COALESCE(data_url, '')) <> '' OR TRIM(COALESCE(notes, '')) <> '')"
+    ).run();
+    return Number(result.meta?.changes) || 0;
+}
+
+async function handleRegisterMissingPortDates(request, env) {
+    const denied = requireAdmin(request, env);
+    if (denied) return denied;
+    const updated = await registerMissingPortDates(env);
+    return jsonResponse({
+        success: true, updated,
+        message: updated ? "Missing DATE ADDED values were registered." : "No ports needed a DATE ADDED value."
+    });
+}
 async function handleHealth(env) {
     const [catalogCounts, deviceCounts] = await Promise.all([
         env.DB.prepare(
@@ -477,6 +1117,113 @@ async function handleHealth(env) {
     });
 }
 
+
+// -----------------------------------------------------------------------------
+// Protected catalog administration (games and ports).
+// Uses the existing IMPORT_SECRET; no public write endpoints are exposed.
+// -----------------------------------------------------------------------------
+
+function isAdminAuthorized(request, env) {
+    if (!env.IMPORT_SECRET) return false;
+    const authorization = request.headers.get("Authorization") || "";
+    const supplied = authorization.startsWith("Bearer ") ? authorization.slice(7).trim() : "";
+    return Boolean(supplied && supplied === env.IMPORT_SECRET);
+}
+
+function requireAdmin(request, env) {
+    if (!env.IMPORT_SECRET) return jsonResponse({ success: false, error: "Admin secret is not configured." }, 503);
+    if (!isAdminAuthorized(request, env)) return jsonResponse({ success: false, error: "Unauthorized." }, 401);
+    return null;
+}
+
+async function handleAdminListPorts(request, env) {
+    const denied = requireAdmin(request, env);
+    if (denied) return denied;
+    const [games, ports] = await Promise.all([
+        env.DB.prepare("SELECT slug, name, year, genre, description, cover_url, launchbox_url FROM games ORDER BY name COLLATE NOCASE").all(),
+        env.DB.prepare("SELECT p.*, g.name AS game_name, g.year AS game_year, g.genre AS game_genre, g.description AS game_description, g.cover_url AS game_cover_url, g.launchbox_url AS game_launchbox_url FROM ports p JOIN games g ON g.slug = p.game_slug ORDER BY g.name COLLATE NOCASE, p.platform COLLATE NOCASE, p.port_id").all()
+    ]);
+    return jsonResponse({
+        success: true,
+        games: games.results || [],
+        ports: (ports.results || []).map((p) => ({
+            gameSlug: p.game_slug, gameName: p.game_name, year: p.game_year || "",
+            genre: p.game_genre || "", description: p.game_description || "",
+            coverUrl: p.game_cover_url || "", launchboxUrl: p.game_launchbox_url || "",
+            portId: p.port_id, platform: p.platform || "", project: p.project || "",
+            link: p.link || "", url: p.url || "", developer: p.developer || "",
+            version: p.version || "", lastUpdate: p.last_update || "",
+            dateAdded: p.date_added || "", needsFiles: p.needs_files || "",
+            dataUrl: p.data_url || "", notes: p.notes || "", works: p.works || "",
+            controllerSupport: p.controller_support || ""
+        }))
+    }, 200, { "Cache-Control": "no-store" });
+}
+
+async function handleAdminSavePort(request, env) {
+    const denied = requireAdmin(request, env);
+    if (denied) return denied;
+    const body = await request.json().catch(() => null);
+    if (!body || typeof body !== "object") return jsonResponse({ success: false, error: "Invalid JSON body." }, 400);
+
+    const clean = (value, max = 2000) => String(value ?? "").trim().slice(0, max);
+    const gameName = clean(body.gameName, 180);
+    const requestedSlug = clean(body.gameSlug, 180);
+    const isNewGame = requestedSlug === "__new__";
+    const gameSlug = isNewGame ? importSlug(gameName) : requestedSlug;
+    const portId = clean(body.portId, 120);
+    const platform = clean(body.platform, 100);
+    if (!gameName || !gameSlug || !portId || !platform) {
+        return jsonResponse({ success: false, error: "Game name, game, port ID and platform are required." }, 400);
+    }
+
+    const game = {
+        slug: gameSlug, name: gameName, year: clean(body.year, 20),
+        genre: clean(body.genre, 120), description: clean(body.description, 4000),
+        coverUrl: clean(body.coverUrl, 1000), launchboxUrl: clean(body.launchboxUrl, 1000)
+    };
+    const port = {
+        portId, platform, project: clean(body.project, 300), link: clean(body.link, 1000),
+        url: clean(body.url, 1000), developer: clean(body.developer, 180),
+        version: clean(body.version, 100), lastUpdate: clean(body.lastUpdate, 100),
+        dateAdded: clean(body.dateAdded, 100) || new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString().slice(0, 19).replace('T', ' '), needsFiles: clean(body.needsFiles, 100),
+        dataUrl: clean(body.dataUrl, 1000), notes: clean(body.notes, 2000),
+        works: clean(body.works, 100), controllerSupport: clean(body.controllerSupport, 100)
+    };
+
+    const existingGame = await env.DB.prepare("SELECT slug FROM games WHERE slug = ?").bind(gameSlug).first();
+    if (!isNewGame && !existingGame) return jsonResponse({ success: false, error: "Selected game no longer exists. Reload the list." }, 409);
+    if (isNewGame && existingGame) return jsonResponse({ success: false, error: "A game with that name already exists. Select it from the game list instead." }, 409);
+    const sortRow = await env.DB.prepare("SELECT COALESCE(MAX(sort_order), -1) + 1 AS next_order FROM ports").first();
+
+    const statements = [
+        env.DB.prepare("INSERT INTO games (slug, name, year, genre, description, cover_url, launchbox_url) VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT(slug) DO UPDATE SET name = excluded.name, year = excluded.year, genre = excluded.genre, description = excluded.description, cover_url = excluded.cover_url, launchbox_url = excluded.launchbox_url, updated_at = CURRENT_TIMESTAMP")
+            .bind(game.slug, game.name, game.year, game.genre, game.description, game.coverUrl, game.launchboxUrl),
+        env.DB.prepare("INSERT INTO platforms (name, sort_order) VALUES (?, 999) ON CONFLICT(name) DO NOTHING").bind(port.platform),
+        env.DB.prepare("INSERT INTO ports (port_id, game_slug, platform, project, link, url, developer, version, last_update, date_added, needs_files, data_url, notes, works, controller_support, sort_order) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(game_slug, port_id) DO UPDATE SET platform = excluded.platform, project = excluded.project, link = excluded.link, url = excluded.url, developer = excluded.developer, version = excluded.version, last_update = excluded.last_update, date_added = CASE WHEN TRIM(COALESCE(ports.date_added, '')) <> '' THEN ports.date_added ELSE excluded.date_added END, needs_files = excluded.needs_files, data_url = excluded.data_url, notes = excluded.notes, works = excluded.works, controller_support = excluded.controller_support")
+            .bind(port.portId, game.slug, port.platform, port.project, port.link, port.url, port.developer, port.version, port.lastUpdate, port.dateAdded, port.needsFiles, port.dataUrl, port.notes, port.works, port.controllerSupport, Number(sortRow?.next_order) || 0),
+        env.DB.prepare("DELETE FROM port_developers WHERE game_slug = ? AND port_id = ?").bind(game.slug, port.portId),
+        env.DB.prepare("DELETE FROM game_categories WHERE game_slug = ?").bind(game.slug)
+    ];
+
+    if (port.developer) {
+        const developerSlug = importSlug(port.developer);
+        if (developerSlug) {
+            statements.push(env.DB.prepare("INSERT INTO developers (name, slug) VALUES (?, ?) ON CONFLICT(name) DO UPDATE SET slug = excluded.slug").bind(port.developer, developerSlug));
+            statements.push(env.DB.prepare("INSERT INTO port_developers (game_slug, port_id, developer_id) SELECT ?, ?, id FROM developers WHERE slug = ? ON CONFLICT(game_slug, port_id, developer_id) DO NOTHING").bind(game.slug, port.portId, developerSlug));
+        }
+    }
+    if (game.genre) {
+        const categorySlug = importSlug(game.genre);
+        if (categorySlug) {
+            statements.push(env.DB.prepare("INSERT INTO categories (name, slug) VALUES (?, ?) ON CONFLICT(name) DO UPDATE SET slug = excluded.slug").bind(game.genre, categorySlug));
+            statements.push(env.DB.prepare("INSERT INTO game_categories (game_slug, category_id) SELECT ?, id FROM categories WHERE slug = ? ON CONFLICT(game_slug, category_id) DO NOTHING").bind(game.slug, categorySlug));
+        }
+    }
+
+    await env.DB.batch(statements);
+    return jsonResponse({ success: true, gameSlug: game.slug, portId: port.portId });
+}
 
 // -----------------------------------------------------------------------------
 // Protected one-time migration from the published Google Sheets CSV.
@@ -747,6 +1494,115 @@ async function handleImportVisits(request, env) {
     });
 }
 
+async function handleImportDailyVisits(request, env) {
+    const denied = requireAdmin(request, env);
+    if (denied) return denied;
+
+    const body = await request.json().catch(() => null);
+    if (!body || typeof body !== "object" || Array.isArray(body)) {
+        return jsonResponse({ success: false, error: "El archivo debe ser un objeto JSON por fecha." }, 400);
+    }
+
+    const history = body.history && typeof body.history === "object" ? body.history : body;
+    const entries = [];
+    const datePattern = /^\\d{4}-\\d{2}-\\d{2}$/;
+
+    for (const [date, games] of Object.entries(history)) {
+        if (!datePattern.test(date) || !games || typeof games !== "object" || Array.isArray(games)) {
+            return jsonResponse({ success: false, error: "Formato inválido en la fecha: " + date }, 422);
+        }
+        const parsedDate = new Date(date + "T12:00:00Z");
+        if (Number.isNaN(parsedDate.getTime()) || parsedDate.toISOString().slice(0, 10) !== date) {
+            return jsonResponse({ success: false, error: "Fecha inválida: " + date }, 422);
+        }
+        for (const [rawSlug, rawVisits] of Object.entries(games)) {
+            const slug = String(rawSlug || "").trim().toLowerCase();
+            const visits = Number(rawVisits);
+            if (!slug || !/^[a-z0-9-]+$/.test(slug) || !Number.isSafeInteger(visits) || visits < 0) {
+                return jsonResponse({ success: false, error: "Registro inválido para " + date + " / " + rawSlug }, 422);
+            }
+            entries.push({ date, slug, visits });
+        }
+    }
+
+    if (!entries.length) {
+        return jsonResponse({ success: false, error: "No se encontraron registros para importar." }, 422);
+    }
+    if (entries.length > 50000) {
+        return jsonResponse({ success: false, error: "El archivo supera el máximo de 50.000 registros." }, 413);
+    }
+
+    await env.DB.prepare(`CREATE TABLE IF NOT EXISTS game_visit_daily_totals (
+        game_slug TEXT NOT NULL,
+        game_name TEXT NOT NULL DEFAULT '',
+        visit_date TEXT NOT NULL,
+        visits INTEGER NOT NULL DEFAULT 0,
+        imported_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        PRIMARY KEY (game_slug, visit_date)
+    )`).run();
+    await env.DB.prepare("CREATE INDEX IF NOT EXISTS idx_daily_visits_date ON game_visit_daily_totals(visit_date)").run();
+    await env.DB.prepare(`CREATE TABLE IF NOT EXISTS game_visit_settings (
+        setting_key TEXT PRIMARY KEY,
+        setting_value TEXT NOT NULL
+    )`).run();
+    // The first successful history import establishes the fresh Week baseline.
+    // Re-importing the same JSON does not reset the Week counter.
+    await env.DB.prepare(`INSERT OR IGNORE INTO game_visit_settings (setting_key, setting_value)
+        VALUES ('week_reset_at', CURRENT_TIMESTAMP)`).run();
+
+    const statements = entries.map((item) =>
+        env.DB.prepare(`INSERT INTO game_visit_daily_totals (game_slug, game_name, visit_date, visits)
+            VALUES (?, ?, ?, ?)
+            ON CONFLICT(game_slug, visit_date) DO UPDATE SET
+                visits = excluded.visits,
+                imported_at = CURRENT_TIMESTAMP`)
+            .bind(item.slug, item.slug, item.date, item.visits)
+    );
+    for (let i = 0; i < statements.length; i += 50) {
+        await env.DB.batch(statements.slice(i, i + 50));
+    }
+
+    const bounds = await env.DB.prepare(
+        "SELECT MIN(visit_date) AS first_date, MAX(visit_date) AS last_date, COUNT(*) AS records FROM game_visit_daily_totals"
+    ).first();
+
+    return jsonResponse({
+        success: true,
+        importedRecords: entries.length,
+        importedDays: Object.keys(history).length,
+        firstDate: bounds?.first_date || null,
+        lastDate: bounds?.last_date || null,
+        totalStoredRecords: Number(bounds?.records) || 0,
+        message: "Historial diario importado. Repetir la importación actualiza los mismos días sin sumar duplicados."
+    });
+}
+
+function handleImportDailyVisitsPage() {
+    const html = `<!doctype html><html lang="es"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>NAPL — Importar historial diario</title>
+<body style="font:16px system-ui;max-width:560px;margin:40px auto;padding:0 18px;background:#101810;color:#eef5ee">
+<h2>Importar historial diario</h2>
+<p>Seleccioná el archivo <b>NAPL-visitas-ultimos-30-dias.json</b> exportado desde Apps Script. La importación reemplaza los valores de cada juego y fecha; no los suma si se repite.</p>
+<form id="f">
+<input id="secret" type="password" autocomplete="off" required placeholder="IMPORT_SECRET" style="box-sizing:border-box;width:100%;padding:12px;margin:8px 0;background:#202d20;color:white;border:1px solid #607060;border-radius:6px">
+<input id="file" type="file" accept=".json,application/json" required style="display:block;margin:14px 0">
+<button style="padding:12px 18px">Importar historial</button></form>
+<pre id="result" style="white-space:pre-wrap;overflow-wrap:anywhere"></pre>
+<script>
+document.getElementById("f").addEventListener("submit",async e=>{
+ e.preventDefault();const out=document.getElementById("result");const file=document.getElementById("file").files[0];
+ if(!file){out.textContent="Seleccioná el archivo JSON.";return;}
+ out.textContent="Leyendo e importando "+file.name+"…";
+ try{
+  const raw=await file.text();const parsed=JSON.parse(raw);
+  const r=await fetch("/admin/import-daily-visits",{method:"POST",headers:{"Authorization":"Bearer "+document.getElementById("secret").value,"Content-Type":"application/json"},body:JSON.stringify(parsed)});
+  const data=await r.json();out.textContent=JSON.stringify(data,null,2);
+ }catch(err){out.textContent="Error: "+err.message;}
+});
+</script></body></html>`;
+    return new Response(html, { headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" } });
+}
+
 function handleImportVisitsPage() {
     const html = `<!doctype html><html lang="es"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>NAPL — Recuperar visitas</title><body style="font:16px system-ui;max-width:520px;margin:40px auto;padding:0 18px;background:#101810;color:#eef5ee">
@@ -892,6 +1748,16 @@ document.getElementById("f").addEventListener("submit", async function(e) {
 }
 
 export default {
+    async scheduled(controller, env, ctx) {
+        ctx.waitUntil(Promise.allSettled([
+            registerMissingPortDates(env),
+            updateGitHubVersions(env),
+            updateDevelopers(env),
+            updateLaunchBoxData(env),
+            updateSteamGameData(env)
+        ]));
+    },
+
     async fetch(request, env) {
         if (request.method === "OPTIONS") {
             return new Response(null, { status: 204, headers: CORS_HEADERS });
@@ -901,6 +1767,13 @@ export default {
         const path = url.pathname.replace(/\/+$/, "") || "/";
 
         try {
+            if (request.method === "GET" && path === "/admin/ports/list") {
+                return await handleAdminListPorts(request, env);
+            }
+            if (request.method === "POST" && path === "/admin/ports/save") {
+                return await handleAdminSavePort(request, env);
+            }
+
             if (request.method === "GET" && path === "/admin/import-devices") {
                 return handleImportDevicesPage();
             }
@@ -913,6 +1786,14 @@ export default {
                 return handleImportPage();
             }
 
+            if (request.method === "GET" && path === "/admin/import-daily-visits") {
+                return handleImportDailyVisitsPage();
+            }
+
+            if (request.method === "POST" && path === "/admin/import-daily-visits") {
+                return await handleImportDailyVisits(request, env);
+            }
+
             if (request.method === "GET" && path === "/admin/import-visits") {
                 return handleImportVisitsPage();
             }
@@ -923,6 +1804,26 @@ export default {
 
             if (request.method === "POST" && path === "/admin/import-sheet") {
                 return await handleImportSheet(request, env);
+            }
+
+            if (request.method === "POST" && path === "/admin/update-github-versions") {
+                return await handleUpdateGitHubVersions(request, env);
+            }
+
+            if (request.method === "POST" && path === "/admin/update-developers") {
+                return await handleUpdateDevelopers(request, env);
+            }
+
+            if (request.method === "POST" && path === "/admin/update-launchbox-data") {
+                return await handleUpdateLaunchBoxData(request, env);
+            }
+
+            if (request.method === "POST" && path === "/admin/update-steam-data") {
+                return await handleUpdateSteamGameData(request, env);
+            }
+
+            if (request.method === "POST" && path === "/admin/register-missing-dates") {
+                return await handleRegisterMissingPortDates(request, env);
             }
 
             if (request.method === "GET" && path === "/health") {

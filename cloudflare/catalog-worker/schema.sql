@@ -91,6 +91,24 @@ CREATE TABLE IF NOT EXISTS game_visits (
 CREATE INDEX IF NOT EXISTS idx_visits_slug_date ON game_visits(game_slug, visited_at);
 CREATE INDEX IF NOT EXISTS idx_visits_date ON game_visits(visited_at);
 
+-- Imported daily visit snapshots from the former Apps Script DAILY_HISTORY.
+-- Week deliberately ignores this table; Month uses it plus post-import live events.
+CREATE TABLE IF NOT EXISTS game_visit_daily_totals (
+    game_slug TEXT NOT NULL,
+    game_name TEXT NOT NULL DEFAULT '',
+    visit_date TEXT NOT NULL,
+    visits INTEGER NOT NULL DEFAULT 0,
+    imported_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (game_slug, visit_date)
+);
+
+CREATE INDEX IF NOT EXISTS idx_daily_visits_date ON game_visit_daily_totals(visit_date);
+
+CREATE TABLE IF NOT EXISTS game_visit_settings (
+    setting_key TEXT PRIMARY KEY,
+    setting_value TEXT NOT NULL
+);
+
 -- Broken / dead link reports
 CREATE TABLE IF NOT EXISTS link_reports (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
