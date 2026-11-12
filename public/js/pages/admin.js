@@ -16,9 +16,10 @@ const form = $("port-form");
 const formMessage = $("form-message");
 const saveButton = $("save-button");
 const gameSearch = $("game-search");
-const gameOptions = $("game-options");
+const gameSuggestions = $("game-suggestions");
 const gameSelectionHint = $("game-selection-hint");
-const platformOptions = $("platform-options");
+const platformSelect = $("platform-select");
+const platformNew = $("platform-new");
 
 let secret = "";
 let games = [];
@@ -96,42 +97,53 @@ function populateGameOptions(query = "") {
           if (aStarts !== bStarts) return aStarts ? -1 : 1;
           return aName.localeCompare(bName);
         })
-        .slice(0, 5)
+        .slice(0, 6)
     : [];
 
-  gameOptions.replaceChildren(...matches.map((game) => {
-    const option = document.createElement("option");
-    option.value = game.name;
-    return option;
-  }));
+  gameSuggestions.replaceChildren();
+  for (const game of matches) {
+    const option = document.createElement("button");
+    option.type = "button";
+    option.className = "game-suggestion";
+    option.textContent = game.name;
+    option.addEventListener("pointerdown", (event) => event.preventDefault());
+    option.addEventListener("click", () => {
+      gameSearch.value = game.name;
+      updateGameSelection();
+      gameSuggestions.hidden = true;
+    });
+    gameSuggestions.append(option);
+  }
+  gameSuggestions.hidden = !matches.length || !normalizedQuery;
 }
 
-function populatePlatformOptions(query = "") {
-  const normalizedQuery = query.trim().toLocaleLowerCase();
-  const availablePlatforms = [...new Set([...platformOrder, ...ports.map((p) => p.platform).filter(Boolean)])];
-  const matches = availablePlatforms
-    .filter((platform) => !normalizedQuery || platform.toLocaleLowerCase().includes(normalizedQuery))
-    .sort((a, b) => {
-      const aName = a.toLocaleLowerCase();
-      const bName = b.toLocaleLowerCase();
-      const aStarts = aName.startsWith(normalizedQuery);
-      const bStarts = bName.startsWith(normalizedQuery);
-      if (aStarts !== bStarts) return aStarts ? -1 : 1;
-      return aName.localeCompare(bName);
-    })
-    .slice(0, 5);
-
-  platformOptions.replaceChildren(...matches.map((platform) => {
-    const option = document.createElement("option");
-    option.value = platform;
-    return option;
-  }));
+function populatePlatformOptions(selectedPlatform = "") {
+  const availablePlatforms = [...new Set([...platformOrder, ...ports.map((p) => p.platform).filter(Boolean)])]
+    .sort((a, b) => a.localeCompare(b));
+  platformSelect.replaceChildren(new Option("Select a platform…", ""));
+  for (const platform of availablePlatforms) platformSelect.add(new Option(platform, platform));
+  platformSelect.add(new Option("＋ Add new platform…", "__new__"));
+  if (selectedPlatform && availablePlatforms.includes(selectedPlatform)) {
+    platformSelect.value = selectedPlatform;
+    platformNew.hidden = true;
+    platformNew.value = "";
+    $("platform").value = selectedPlatform;
+  } else if (selectedPlatform) {
+    platformSelect.value = "__new__";
+    platformNew.hidden = false;
+    platformNew.value = selectedPlatform;
+    $("platform").value = selectedPlatform;
+  } else {
+    platformSelect.value = "";
+    platformNew.hidden = true;
+    platformNew.value = "";
+    $("platform").value = "";
+  }
 }
 
 function populateOptions(selectedName = "", selectedPlatform = "") {
-  populateGameOptions(selectedName);
   gameSearch.value = selectedName;
-  $("platform").value = selectedPlatform;
+  populateGameOptions(selectedName);
   populatePlatformOptions(selectedPlatform);
 }
 
@@ -318,9 +330,21 @@ function updateGameSelection() {
 }
 
 gameSearch.addEventListener("input", updateGameSelection);
+gameSearch.addEventListener("focus", () => populateGameOptions(gameSearch.value));
 gameSearch.addEventListener("change", updateGameSelection);
-$("platform").addEventListener("input", () => populatePlatformOptions(value("platform")));
-$("platform").addEventListener("change", () => populatePlatformOptions(value("platform")));
+gameSearch.addEventListener("blur", () => { window.setTimeout(() => { gameSuggestions.hidden = true; }, 120); });
+platformSelect.addEventListener("change", () => {
+  const addingNew = platformSelect.value === "__new__";
+  platformNew.hidden = !addingNew;
+  if (addingNew) {
+    $("platform").value = platformNew.value.trim();
+    platformNew.focus();
+  } else {
+    platformNew.value = "";
+    $("platform").value = platformSelect.value;
+  }
+});
+platformNew.addEventListener("input", () => { $("platform").value = platformNew.value.trim(); });
 $("new-port-button").addEventListener("click", () => openEditor());
 $("cancel-edit").addEventListener("click", () => { editor.hidden = true; editing = null; });
 searchInput.addEventListener("input", renderList);
@@ -340,6 +364,8 @@ authForm.addEventListener("submit", async (event) => {
 
 form.addEventListener("submit", async (event) => {
   event.preventDefault();
+  if (platformSelect.value === "__new__") $("platform").value = platformNew.value.trim();
+  else $("platform").value = platformSelect.value;
   if (!editing) updateGameSelection();
   if (!editing && selectedGameSlug === "__new__" && !value("gameName")) {
     showMessage(formMessage, "Enter a game name.", true);
