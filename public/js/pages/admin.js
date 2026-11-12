@@ -350,6 +350,7 @@ form.addEventListener("submit", async (event) => {
   for (const [key, id] of Object.entries(fields)) payload[key] = value(id);
   payload.gameSlug = editing ? editing.gameSlug : selectedGameSlug;
   payload.originalPortId = editing ? editing.portId : "";
+  payload.isUnofficialPort = $("unofficial-port").checked;
   try {
     await api("/admin/ports/save", { method: "POST", body: JSON.stringify(payload) });
     const data = await api("/admin/ports/list");
