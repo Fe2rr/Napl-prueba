@@ -250,7 +250,8 @@ export function groupGames(rows) {
             grouped.set(key, {
                 name: port.game,
                 year: port.year || "",
-                slug: key,
+                // Keep grouping by normalized name, but use URL-safe slugs for routes.
+                slug: createSlug(port.game),
                 coverUrl: port.coverUrl || "",
                 genre: port.genre || "",
                 description: port.description || "",
