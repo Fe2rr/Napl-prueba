@@ -1245,6 +1245,13 @@ async function handleAdminListPorts(request, env) {
                 slug: gameSlug, name: currentGame, year: currentYear, genre, description,
                 cover_url: coverUrl, launchbox_url: launchboxUrl, visits: 0
             });
+        } else {
+            const existingGame = gamesMap.get(gameSlug);
+            if (!existingGame.year && currentYear) existingGame.year = currentYear;
+            if (!existingGame.genre && genre) existingGame.genre = genre;
+            if (!existingGame.description && description) existingGame.description = description;
+            if (!existingGame.cover_url && coverUrl) existingGame.cover_url = coverUrl;
+            if (!existingGame.launchbox_url && launchboxUrl) existingGame.launchbox_url = launchboxUrl;
         }
         const portId = read("PORTS_ID", "PORT ID", "PORT_ID") || gameSlug + "-row-" + item.rowNumber;
         const hasData = ["PLATFORM","PROJECT","LINK","URL","DEVELOPER","VERSION","LAST UPDATE","DATE ADDED","NEEDS GAME FILES?","DATA URL","NOTES","WORKS?","CONTROLLER SUPPORT"]
