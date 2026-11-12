@@ -1398,24 +1398,66 @@ async function handleAdminSavePort(request, env) {
     const endColumn = sheetColumnName(headers.length - 1);
     const quotedTab = "'" + tabName.replace(/'/g, "''") + "'";
     if (target) {
-        const updates = [];
-        const firstValues = makeValues(firstGameRow.values);
-        if (firstGameRow.rowNumber === target.rowNumber) {
-            const merged = makeValues(portValues);
-            set(merged, ["GAME"], gameName);
-            set(merged, ["YEAR"], clean(body.year, 20));
-            set(merged, ["GENRE"], clean(body.genre, 120));
-            set(merged, ["DESCRIPTION"], clean(body.description, 4000));
-            set(merged, ["COVER_URL","COVER URL"], clean(body.coverUrl, 1000));
-            set(merged, ["LAUNCHBOX_URL","LAUNCHBOX URL"], clean(body.launchboxUrl, 1000));
-            await writeSheetValues(env, quotedTab + "!A" + target.rowNumber + ":" + endColumn + target.rowNumber, [merged]);
-        } else {
-            await writeSheetValues(env, quotedTab + "!A" + firstGameRow.rowNumber + ":" + endColumn + firstGameRow.rowNumber, [gameValues]);
-            await writeSheetValues(env, quotedTab + "!A" + target.rowNumber + ":" + endColumn + target.rowNumber, [portValues]);
+        const cellUpdates = [];
+        const queue = (rowNumber, aliases, value) => {
+            const columnIndex = indexOf(...aliases);
+            if (columnIndex >= 0) {
+                cellUpdates.push({
+                    rowNumber,
+                    column: sheetColumnName(columnIndex),
+                    value: String(value ?? "")
+                });
+            }
+        };
+        // Game-level fields live on the first row of the game's group.
+        queue(firstGameRow.rowNumber, ["GAME"], gameName);
+        queue(firstGameRow.rowNumber, ["YEAR"], clean(body.year, 20));
+        queue(firstGameRow.rowNumber, ["GENRE"], clean(body.genre, 120));
+        queue(firstGameRow.rowNumber, ["DESCRIPTION"], clean(body.description, 4000));
+        queue(firstGameRow.rowNumber, ["COVER_URL","COVER URL"], clean(body.coverUrl, 1000));
+        queue(firstGameRow.rowNumber, ["LAUNCHBOX_URL","LAUNCHBOX URL"], clean(body.launchboxUrl, 1000));
+
+        // If the sheet repeats the game name on multiple rows, keep those labels consistent.
+        for (const groupRow of groupRows) {
+            if (groupRow.rowNumber === firstGameRow.rowNumber) continue;
+            const existingGameCell = String(groupRow.values[indexOf("GAME")] || "").trim();
+            if (existingGameCell) queue(groupRow.rowNumber, ["GAME"], gameName);
         }
+
+        // Port-level fields are written only to the selected row, preserving merged
+        // game metadata cells and every unrelated column in the sheet.
+        queue(target.rowNumber, ["PORTS_ID"], portId);
+        queue(target.rowNumber, ["PLATFORM"], platform);
+        queue(target.rowNumber, ["PROJECT"], clean(body.project, 300));
+        queue(target.rowNumber, ["LINK"], clean(body.link, 1000));
+        queue(target.rowNumber, ["URL"], clean(body.url, 1000));
+        queue(target.rowNumber, ["DEVELOPER"], clean(body.developer, 180));
+        queue(target.rowNumber, ["VERSION"], clean(body.version, 100));
+        queue(target.rowNumber, ["LAST UPDATE"], lastUpdate);
+        queue(target.rowNumber, ["DATE ADDED"], dateAdded);
+        queue(target.rowNumber, ["NEEDS GAME FILES?","NEEDS GAME FILES"], clean(body.needsFiles, 100));
+        queue(target.rowNumber, ["DATA URL"], clean(body.dataUrl, 1000));
+        queue(target.rowNumber, ["NOTES"], clean(body.notes, 2000));
+        queue(target.rowNumber, ["CONTROLLER SUPPORT"], clean(body.inputMethods, 100));
+        await updateSheetCells(env, cellUpdates);
     } else {
         if (groupRows.length) {
-            await writeSheetValues(env, quotedTab + "!A" + firstGameRow.rowNumber + ":" + endColumn + firstGameRow.rowNumber, [gameValues]);
+            const cellUpdates = [];
+            const queue = (aliases, value) => {
+                const columnIndex = indexOf(...aliases);
+                if (columnIndex >= 0) cellUpdates.push({
+                    rowNumber: firstGameRow.rowNumber,
+                    column: sheetColumnName(columnIndex),
+                    value: String(value ?? "")
+                });
+            };
+            queue(["GAME"], gameName);
+            queue(["YEAR"], clean(body.year, 20));
+            queue(["GENRE"], clean(body.genre, 120));
+            queue(["DESCRIPTION"], clean(body.description, 4000));
+            queue(["COVER_URL","COVER URL"], clean(body.coverUrl, 1000));
+            queue(["LAUNCHBOX_URL","LAUNCHBOX URL"], clean(body.launchboxUrl, 1000));
+            await updateSheetCells(env, cellUpdates);
         }
         set(portValues, ["GAME"], gameName);
         await writeSheetValues(env, quotedTab + "!A:Z", [portValues], { append: true });
