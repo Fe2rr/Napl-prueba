@@ -148,7 +148,40 @@ async function runMaintenance(action, button) {
   maintenanceStatus.classList.remove("error");
   maintenanceStatus.textContent = "The update is running. Keep this page open until it finishes.";
   try {
-    const data = await api(`/admin/${action}`, { method: "POST" });
+    let data;
+    if (action === "update-github-versions") {
+      const totals = {
+        success: true, uniqueRepositories: 0, processedRepositories: 0,
+        repositoriesWithVersion: 0, withoutVersion: 0,
+        updatedRows: 0, versionRows: 0, dateRows: 0, errors: []
+      };
+      let offset = 0;
+      let complete = false;
+      do {
+        const chunk = await api(`/admin/${action}`, {
+          method: "POST",
+          body: JSON.stringify({ offset })
+        });
+        totals.uniqueRepositories = chunk.uniqueRepositories ?? totals.uniqueRepositories;
+        totals.processedRepositories += chunk.processedRepositories ?? 0;
+        totals.repositoriesWithVersion += chunk.repositoriesWithVersion ?? 0;
+        totals.withoutVersion += chunk.withoutVersion ?? 0;
+        totals.updatedRows += chunk.updatedRows ?? 0;
+        totals.versionRows += chunk.versionRows ?? 0;
+        totals.dateRows += chunk.dateRows ?? 0;
+        totals.errors.push(...(Array.isArray(chunk.errors) ? chunk.errors : []));
+        offset = chunk.nextOffset ?? offset;
+        complete = Boolean(chunk.complete);
+        maintenanceStatus.textContent =
+          `Updating GitHub releases: ${totals.processedRepositories}/${totals.uniqueRepositories} repositories processed…`;
+        if (!complete && !chunk.processedRepositories) {
+          throw new Error("The GitHub updater returned an empty batch before completion.");
+        }
+      } while (!complete);
+      data = totals;
+    } else {
+      data = await api(`/admin/${action}`, { method: "POST" });
+    }
     maintenanceStatus.textContent = `Completed: ${summarizeMaintenance(action, data)}`;
   } catch (error) {
     maintenanceStatus.textContent = `Update failed: ${error.message}`;
