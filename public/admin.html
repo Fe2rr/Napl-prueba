@@ -42,9 +42,11 @@
         <div class="editor-heading"><div><span class="eyebrow">PORT EDITOR</span><h2 id="editor-title">Add port</h2></div><button id="cancel-edit" class="button secondary" type="button">Close</button></div>
         <form id="port-form">
           <h3>Game information</h3>
-          <div class="field">
-            <label for="game-select">Game</label>
-            <select id="game-select" required></select>
+          <div class="field game-autocomplete">
+            <label for="game-search">Game</label>
+            <input id="game-search" type="search" maxlength="180" list="game-options" placeholder="Search an existing game or type a new name…" autocomplete="off" required>
+            <datalist id="game-options"></datalist>
+            <p class="field-hint" id="game-selection-hint">Choose an existing game or enter a new name.</p>
           </div>
           <div class="field">
             <label for="game-name">Game name</label>
