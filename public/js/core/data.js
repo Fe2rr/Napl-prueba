@@ -250,7 +250,8 @@ export function groupGames(rows) {
             grouped.set(key, {
                 name: port.game,
                 year: port.year || "",
-                slug: key,
+                // Routes and API lookups require a URL-safe canonical slug.
+                slug: createSlug(port.game),
                 coverUrl: port.coverUrl || "",
                 genre: port.genre || "",
                 description: port.description || "",
