@@ -191,7 +191,10 @@ async function loadPopular(period = state.selectedPopularPeriod) {
 
         const ranking = rawGames
             .map((item) => {
-                const game = gameMap.get(createSlug(item.game));
+                // Popularity APIs may return a slug, a game name, or both.
+                const apiSlug = createSlug(item.slug || "");
+                const gameSlug = createSlug(item.game || "");
+                const game = gameMap.get(apiSlug) || gameMap.get(gameSlug);
                 if (!game) return null;
                 return {
                     game,
