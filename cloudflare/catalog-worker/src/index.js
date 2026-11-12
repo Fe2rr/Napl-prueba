@@ -294,9 +294,16 @@ async function handleGetPopular(url, env) {
         setting_value TEXT NOT NULL
     )`).run();
 
+    // Establish one shared starting point for the new Week and Month counters.
+    // This key is intentionally separate from any older reset setting.
+    await env.DB.prepare(
+        `INSERT OR IGNORE INTO game_visit_settings (setting_key, setting_value)
+         VALUES ('periods_start_at', CURRENT_TIMESTAMP)`
+    ).run();
+
     let rows;
     if (period === "alltime") {
-        // Historical total comes from Google Sheets. New D1 events are added once.
+        // Preserve the historical total and add every new D1 event exactly once.
         // game_visit_totals is intentionally excluded because it contains old seed values.
         rows = await env.DB.prepare(
             `SELECT slug, MAX(game) AS game, SUM(visits) AS visits
@@ -319,52 +326,26 @@ async function handleGetPopular(url, env) {
              ORDER BY visits DESC, slug ASC
              LIMIT 100`
         ).all();
-    } else if (period === "month") {
-        // Daily history covers complete days through its latest imported date.
-        // Count live events only after that cutoff to prevent overlap/double counting.
-        rows = await env.DB.prepare(
-            `SELECT slug, MAX(game) AS game, SUM(visits) AS visits
-             FROM (
-                 SELECT h.game_slug AS slug,
-                        COALESCE(MAX(NULLIF(g.name, '')), MAX(NULLIF(h.game_name, '')), h.game_slug) AS game,
-                        SUM(h.visits) AS visits
-                 FROM game_visit_daily_totals h
-                 LEFT JOIN games g ON g.slug = h.game_slug
-                 WHERE h.visit_date >= date('now', '-29 days')
-                 GROUP BY h.game_slug
-                 UNION ALL
-                 SELECT v.game_slug AS slug,
-                        COALESCE(MAX(NULLIF(g.name, '')), MAX(NULLIF(v.game_name, '')), v.game_slug) AS game,
-                        COUNT(*) AS visits
-                 FROM game_visits v
-                 LEFT JOIN games g ON g.slug = v.game_slug
-                 WHERE v.visited_at >= datetime('now', '-30 days')
-                   AND date(v.visited_at) > COALESCE(
-                       (SELECT MAX(visit_date) FROM game_visit_daily_totals),
-                       '0000-00-00'
-                   )
-                 GROUP BY v.game_slug
-             )
-             GROUP BY slug
-             HAVING SUM(visits) > 0
-             ORDER BY visits DESC, slug ASC
-             LIMIT 100`
-        ).all();
     } else {
-        // Week intentionally starts fresh: only new D1 visit events count.
+        // Week and Month both start at the first request after this version is deployed.
+        // They count only visits recorded since that shared baseline.
+        const window = period === "month" ? "-30 days" : "-7 days";
         rows = await env.DB.prepare(
-            `SELECT game_slug AS slug,
-                    COALESCE(MAX(NULLIF(game_name, '')), game_slug) AS game,
+            `SELECT v.game_slug AS slug,
+                    COALESCE(MAX(NULLIF(g.name, '')), MAX(NULLIF(v.game_name, '')), v.game_slug) AS game,
                     COUNT(*) AS visits
-             FROM game_visits
-             WHERE visited_at >= COALESCE(
-                 (SELECT setting_value FROM game_visit_settings WHERE setting_key = 'week_reset_at'),
-                 datetime('now')
+             FROM game_visits v
+             LEFT JOIN games g ON g.slug = v.game_slug
+             WHERE v.visited_at >= (
+                 SELECT setting_value
+                 FROM game_visit_settings
+                 WHERE setting_key = 'periods_start_at'
              )
-             GROUP BY game_slug
-             ORDER BY visits DESC, game_slug ASC
+               AND v.visited_at >= datetime('now', ?)
+             GROUP BY v.game_slug
+             ORDER BY visits DESC, v.game_slug ASC
              LIMIT 100`
-        ).all();
+        ).bind(window).all();
     }
 
     return jsonResponse(
