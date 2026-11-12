@@ -505,33 +505,67 @@ function formatGitHubDate(value) {
 
 async function githubRequest(url, token) {
     return fetch(url, {
-        headers: { Authorization: 'Bearer ' + token, Accept: 'application/vnd.github+json', 'X-GitHub-Api-Version': '2022-11-28' },
+        headers: {
+            Authorization: 'Bearer ' + token,
+            Accept: 'application/vnd.github+json',
+            'X-GitHub-Api-Version': '2022-11-28',
+            'User-Agent': 'NAPL-Catalog-Worker'
+        },
         cf: { cacheTtl: 0, cacheEverything: false }
     });
 }
 
+async function githubResponseDetail(response) {
+    const rateRemaining = response.headers.get('x-ratelimit-remaining');
+    const rateReset = response.headers.get('x-ratelimit-reset');
+    const retryAfter = response.headers.get('retry-after');
+    let message = '';
+    try {
+        const body = await response.clone().json();
+        message = String(body.message || body.error || '').slice(0, 240);
+    } catch (_) {}
+    return [
+        message,
+        rateRemaining !== null ? 'rate_remaining=' + rateRemaining : '',
+        rateReset ? 'rate_reset=' + rateReset : '',
+        retryAfter ? 'retry_after=' + retryAfter : ''
+    ].filter(Boolean).join('; ') || 'No response details';
+}
+
 async function resolveGitHubVersion(info, token) {
     let releaseResponse;
-    try { releaseResponse = await githubRequest(githubApiUrl(info, '/releases/latest'), token); }
-    catch (error) { return { key: info.key, error: 'release_network_error' }; }
+    try {
+        releaseResponse = await githubRequest(githubApiUrl(info, '/releases/latest'), token);
+    } catch (error) {
+        return { key: info.key, error: 'release_network_error', detail: String(error?.message || error).slice(0, 240) };
+    }
 
     if (releaseResponse.status === 200) {
         try {
             const release = await releaseResponse.json();
             const version = String(release.tag_name || release.name || '').trim();
             if (version) return { key: info.key, version, date: release.published_at || release.created_at || '', source: 'Release' };
-        } catch (_) {}
+        } catch (error) {
+            return { key: info.key, error: 'invalid_release_json', detail: String(error?.message || error).slice(0, 240) };
+        }
     } else if (releaseResponse.status !== 404) {
-        return { key: info.key, error: 'release_http_' + releaseResponse.status };
+        return { key: info.key, error: 'release_http_' + releaseResponse.status, detail: await githubResponseDetail(releaseResponse) };
     }
 
     let tagsResponse;
-    try { tagsResponse = await githubRequest(githubApiUrl(info, '/tags?per_page=1'), token); }
-    catch (error) { return { key: info.key, error: 'tags_network_error' }; }
-    if (!tagsResponse.ok) return { key: info.key, error: 'tags_http_' + tagsResponse.status };
+    try {
+        tagsResponse = await githubRequest(githubApiUrl(info, '/tags?per_page=1'), token);
+    } catch (error) {
+        return { key: info.key, error: 'tags_network_error', detail: String(error?.message || error).slice(0, 240) };
+    }
+    if (!tagsResponse.ok) {
+        return { key: info.key, error: 'tags_http_' + tagsResponse.status, detail: await githubResponseDetail(tagsResponse) };
+    }
 
     let tags;
-    try { tags = await tagsResponse.json(); } catch (_) { return { key: info.key, error: 'invalid_tags_json' }; }
+    try { tags = await tagsResponse.json(); } catch (error) {
+        return { key: info.key, error: 'invalid_tags_json', detail: String(error?.message || error).slice(0, 240) };
+    }
     if (!Array.isArray(tags) || !tags.length) return { key: info.key, error: 'no_release_or_tag' };
     const version = String(tags[0]?.name || '').trim();
     if (!version) return { key: info.key, error: 'empty_tag' };
@@ -560,14 +594,14 @@ async function updateGitHubVersions(env) {
     const results = new Map();
     const errors = [];
     let withoutVersion = 0;
-    const batchSize = 20;
+    const batchSize = 5;
     for (let offset = 0; offset < repos.length; offset += batchSize) {
         const batch = repos.slice(offset, offset + batchSize);
         const resolved = await Promise.all(batch.map((info) => resolveGitHubVersion(info, env.GITHUB_TOKEN)));
         for (const item of resolved) {
             if (item.version) results.set(item.key, item);
             else if (item.error === 'no_release_or_tag') withoutVersion++;
-            else if (item.error) errors.push({ repository: item.key, error: item.error });
+            else if (item.error) errors.push({ repository: item.key, error: item.error, detail: item.detail || '' });
         }
     }
 
