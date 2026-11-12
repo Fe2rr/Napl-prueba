@@ -123,8 +123,6 @@ export function extractPlatformOrder(rows) {
 export function processRows(rows) {
     let currentGame = "";
     let currentYear = "";
-    let currentPlatform = "";
-    let currentProject = "";
     const result = [];
 
     for (const row of rows) {
@@ -133,18 +131,13 @@ export function processRows(rows) {
         const platformValue = getColumn(row, ["PLATFORM", "PLATAFORM", "PLATAFORMA"]);
         const projectValue = getColumn(row, ["PROJECT", "PROYECTO"]);
 
-        if (gameValue) {
-            currentGame = gameValue;
-            currentProject = "";
-        }
+        if (gameValue) currentGame = gameValue;
         if (yearValue) currentYear = yearValue;
-        if (platformValue) currentPlatform = platformValue;
-        if (projectValue) currentProject = projectValue;
 
-        // Sheets exports merged cells as a value in the first row and blanks
-        // in the following rows. Carry those values forward for related ports.
-        const platform = currentPlatform;
-        const project = currentProject;
+        // Match the working V3 behavior: PLATFORM and PROJECT belong only
+        // to the current CSV row. Do not inherit values from previous rows.
+        const platform = platformValue;
+        const project = projectValue;
         const rawPortId = getColumn(row, ["PORTS_ID", "PORT ID", "PORT_ID"]);
         const portId =
             /^unofficial-port(?:-\d+)?$/i.test(rawPortId) && currentGame
@@ -249,7 +242,8 @@ export function groupGames(rows) {
     for (const port of rows) {
         if (!port || !port.game) continue;
 
-        const key = createSlug(port.game);
+        // V3 groups by normalized game name, not by its URL slug.
+        const key = normalizeText(port.game);
         if (!key) continue;
 
         if (!grouped.has(key)) {
