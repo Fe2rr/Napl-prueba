@@ -498,9 +498,14 @@ function githubApiUrl(info, suffix = '') {
 function formatGitHubDate(value) {
     const date = new Date(value);
     if (!Number.isFinite(date.getTime())) return '';
-    const parts = new Intl.DateTimeFormat('en-US', { timeZone: 'America/Montevideo', year: 'numeric', month: 'long', day: 'numeric' }).formatToParts(date);
-    const part = (type) => parts.find((item) => item.type === type)?.value || '';
-    return part('year') + ', ' + part('month') + ' ' + Number(part('day'));
+    const parts = new Intl.DateTimeFormat('en-CA', {
+        timeZone: 'America/Montevideo',
+        year: 'numeric', month: '2-digit', day: '2-digit',
+        hour: '2-digit', minute: '2-digit', second: '2-digit',
+        hourCycle: 'h23'
+    }).formatToParts(date);
+    const values = Object.fromEntries(parts.map((item) => [item.type, item.value]));
+    return `${values.year}-${values.month}-${values.day} ${values.hour}:${values.minute}:${values.second}`;
 }
 
 async function githubRequest(url, token) {
