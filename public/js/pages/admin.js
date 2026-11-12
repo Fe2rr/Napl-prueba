@@ -274,7 +274,7 @@ function openEditor(port = null) {
 
   if (port) {
     for (const [key] of Object.entries(fields)) setValue(key, port[key]);
-    $("unofficial-port").checked = /-unofficial-port(?:-\\d+)?$/i.test(port.portId || "");
+    $("unofficial-port").checked = /-unofficial-port(?:-\d+)?$/i.test(port.portId || "");
     gameSearch.disabled = true;
     $("game-name").readOnly = false;
     $("port-id").readOnly = false;
