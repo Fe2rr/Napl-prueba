@@ -239,10 +239,12 @@ export function createCompatibilityActions() {
             }
 
             if (!response.ok || !data.success) {
-                throw new Error(
+                const error = new Error(
                     data.error ||
                         `Report server error (HTTP ${response.status}).`
                 );
+                error.retryAfterSeconds = Number(data.retry_after_seconds) || 0;
+                throw error;
             }
 
             return data;
