@@ -456,6 +456,39 @@ async function handleReportLink(request, env) {
         .map((b) => b.toString(16).padStart(2, "0"))
         .join("");
 
+    // Enforce one link report per voter token every 10 minutes.
+    // The limit is checked and reserved atomically in D1, so parallel requests
+    // cannot bypass it by arriving at the same time.
+    await env.DB.prepare(`
+        CREATE TABLE IF NOT EXISTS link_report_rate_limits (
+            token_hash TEXT PRIMARY KEY,
+            last_report_at INTEGER NOT NULL
+        )
+    `).run();
+
+    const now = Math.floor(Date.now() / 1000);
+    const reservation = await env.DB.prepare(`
+        INSERT INTO link_report_rate_limits (token_hash, last_report_at)
+        VALUES (?, ?)
+        ON CONFLICT(token_hash) DO UPDATE SET last_report_at = excluded.last_report_at
+        WHERE link_report_rate_limits.last_report_at <= ? - 600
+    `).bind(tokenHash, now, now).run();
+
+    if (!reservation.meta?.changes) {
+        const previous = await env.DB.prepare(
+            "SELECT last_report_at FROM link_report_rate_limits WHERE token_hash = ?"
+        ).bind(tokenHash).first();
+        const retryAfter = Math.max(
+            1,
+            600 - (now - Number(previous?.last_report_at || now))
+        );
+        return jsonResponse({
+            success: false,
+            error: `You can submit another report in ${Math.ceil(retryAfter / 60)} minute(s).`,
+            retry_after_seconds: retryAfter
+        }, 429, { "Retry-After": String(retryAfter) });
+    }
+
     const payload = {
         embeds: [
             {
@@ -480,11 +513,17 @@ async function handleReportLink(request, env) {
         });
     } catch (error) {
         console.error("Discord webhook network error:", error);
+        await env.DB.prepare(
+            "DELETE FROM link_report_rate_limits WHERE token_hash = ? AND last_report_at = ?"
+        ).bind(tokenHash, now).run();
         return jsonResponse({ success: false, error: "Could not reach Discord. Please try again." }, 502);
     }
 
     if (!discordResponse.ok) {
         console.error("Discord webhook returned HTTP", discordResponse.status);
+        await env.DB.prepare(
+            "DELETE FROM link_report_rate_limits WHERE token_hash = ? AND last_report_at = ?"
+        ).bind(tokenHash, now).run();
         return jsonResponse({ success: false, error: "Discord rejected the report.", discordStatus: discordResponse.status }, 502);
     }
 
