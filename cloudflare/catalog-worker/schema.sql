@@ -121,3 +121,9 @@ CREATE TABLE IF NOT EXISTS link_reports (
 );
 
 CREATE INDEX IF NOT EXISTS idx_link_reports_port_id ON link_reports(port_id);
+
+-- Server-enforced anti-spam: one broken-link report per voter token per 10 minutes.
+CREATE TABLE IF NOT EXISTS link_report_rate_limits (
+    token_hash TEXT PRIMARY KEY,
+    last_report_at INTEGER NOT NULL
+);
