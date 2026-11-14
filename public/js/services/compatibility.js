@@ -8,7 +8,6 @@
 import {
     COMPATIBILITY_API_URL,
     REPORT_LINK_API_URL,
-    CATALOG_API_BASE,
     USER_DEVICE_STORAGE_KEY,
 } from "../core/config.js";
 import { getRatingToken } from "./ratings.js";
@@ -23,9 +22,7 @@ export async function loadDevices() {
 
     if (!devicesPromise) {
         devicesPromise = (async () => {
-            const devicesUrl = CATALOG_API_BASE
-                ? `${CATALOG_API_BASE}/devices`
-                : "assets/data/devices.json";
+            const devicesUrl = "assets/data/devices.json";
             const response = await fetch(devicesUrl, {
                 cache: "force-cache",
             });
