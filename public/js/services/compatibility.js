@@ -10,6 +10,7 @@ import {
     REPORT_LINK_API_URL,
     USER_DEVICE_STORAGE_KEY,
 } from "../core/config.js";
+import { getRatingToken } from "./ratings.js";
 
 let devicesCache = null;
 let devicesPromise = null;
