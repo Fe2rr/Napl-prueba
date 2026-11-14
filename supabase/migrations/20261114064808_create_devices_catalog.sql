@@ -73,7 +73,3 @@ REVOKE ALL ON FUNCTION public.get_compatibility_devices() FROM PUBLIC, anon, aut
 GRANT EXECUTE ON FUNCTION public.get_compatibility_devices() TO service_role;
 REVOKE ALL ON FUNCTION public.upsert_compatibility_report(text, text, text, boolean) FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.upsert_compatibility_report(text, text, text, boolean) TO service_role;
-
--- Index the referencing side of the device foreign key for efficient checks.
-CREATE INDEX compatibility_reports_device_id_idx
-    ON public.compatibility_reports (device_id);
