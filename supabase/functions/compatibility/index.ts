@@ -4,11 +4,6 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "Content-Type, apikey, Authorization",
 };
 
-const DEVICE_CATALOG_URL =
-  "https://raw.githubusercontent.com/Fe2rr/Napl-prueba/main/public/assets/data/devices.json";
-
-let deviceCatalogPromise: Promise<Map<string, string>> | null = null;
-
 function json(data: unknown, status = 200, headers: Record<string, string> = {}) {
   return new Response(JSON.stringify(data), {
     status,
@@ -18,34 +13,6 @@ function json(data: unknown, status = 200, headers: Record<string, string> = {})
       ...headers,
     },
   });
-}
-
-async function getDeviceCatalog(): Promise<Map<string, string>> {
-  if (!deviceCatalogPromise) {
-    deviceCatalogPromise = (async () => {
-      const response = await fetch(DEVICE_CATALOG_URL, {
-        headers: { "Accept": "application/json" },
-      });
-      if (!response.ok) {
-        throw new Error(`Device catalog unavailable (HTTP ${response.status}).`);
-      }
-      const payload = await response.json();
-      const rows = Array.isArray(payload) ? payload : payload?.devices;
-      if (!Array.isArray(rows)) throw new Error("Invalid device catalog format.");
-
-      const catalog = new Map<string, string>();
-      for (const item of rows) {
-        const id = String(item?.id ?? "").trim();
-        const name = String(item?.name ?? "").trim();
-        if (id && name) catalog.set(id, name);
-      }
-      return catalog;
-    })().catch((error) => {
-      deviceCatalogPromise = null;
-      throw error;
-    });
-  }
-  return deviceCatalogPromise;
 }
 
 function getBackendKey(): { key: string; legacy: boolean } {
@@ -114,6 +81,15 @@ Deno.serve(async (request: Request) => {
     const url = new URL(request.url);
 
     if (request.method === "GET") {
+      if (url.searchParams.get("action") === "devices") {
+        const devices = await rpc("get_compatibility_devices", {});
+        return json(
+          { success: true, devices: Array.isArray(devices) ? devices : [] },
+          200,
+          { "Cache-Control": "public, max-age=3600, s-maxage=86400, stale-while-revalidate=604800" },
+        );
+      }
+
       const ids = Array.from(new Set(
         (url.searchParams.get("port_ids") || "")
           .split(",")
@@ -157,21 +133,11 @@ Deno.serve(async (request: Request) => {
         }, 400);
       }
 
-      const devices = await getDeviceCatalog();
-      const deviceName = devices.get(deviceId);
-      if (!deviceName) {
-        return json({
-          success: false,
-          error: "Invalid device_id. Please select a device from the official list.",
-        }, 400);
-      }
-
       const tokenHash = await hashToken(token);
       const saved = await rpc("upsert_compatibility_report", {
         p_port_id: portId,
         p_token_hash: tokenHash,
         p_device_id: deviceId,
-        p_device_name: deviceName,
         p_works: works,
       });
 
