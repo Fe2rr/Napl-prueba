@@ -16,30 +16,29 @@ let devicesCache = null;
 let devicesPromise = null;
 
 export async function loadDevices() {
-    if (devicesCache) {
-        return devicesCache;
-    }
+    if (devicesCache) return devicesCache;
 
     if (!devicesPromise) {
         devicesPromise = (async () => {
-            const devicesUrl = "assets/data/devices.json";
-            const response = await fetch(devicesUrl, {
-                cache: "force-cache",
-            });
+            const response = await fetch(
+                `${COMPATIBILITY_API_URL}?action=devices`,
+                { cache: "force-cache" }
+            );
             if (!response.ok) {
                 throw new Error(
                     `Could not load device database (HTTP ${response.status}).`
                 );
             }
+
             const payload = await response.json();
-            const data = Array.isArray(payload) ? payload : payload?.devices;
-            if (!Array.isArray(data)) {
+            if (!payload?.success || !Array.isArray(payload.devices)) {
                 throw new Error("Device database returned an invalid format.");
             }
-            devicesCache = data.map((d) => ({
-                id: String(d.id || ""),
-                name: String(d.name || ""),
-                lower: String(d.name || "").toLowerCase(),
+
+            devicesCache = payload.devices.map((device) => ({
+                id: String(device.id || ""),
+                name: String(device.name || ""),
+                lower: String(device.name || "").toLowerCase(),
             }));
             return devicesCache;
         })();
