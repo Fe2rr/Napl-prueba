@@ -10,10 +10,45 @@ import {
     REPORT_LINK_API_URL,
     USER_DEVICE_STORAGE_KEY,
 } from "../core/config.js";
-import { getRatingToken } from "./ratings.js";
 
 let devicesCache = null;
 let devicesPromise = null;
+let compatibilityTokenMemory = "";
+
+function getCompatibilityToken() {
+    if (compatibilityTokenMemory) return compatibilityTokenMemory;
+
+    const storageKey = "napl_compatibility_token_v1";
+
+    try {
+        const stored = localStorage.getItem(storageKey);
+        if (stored && stored.length >= 32 && stored.length <= 128) {
+            compatibilityTokenMemory = stored;
+            return stored;
+        }
+    } catch {
+        // Continue with an in-memory token if storage is unavailable.
+    }
+
+    if (!globalThis.crypto?.getRandomValues) {
+        throw new Error("Secure compatibility token generation is unavailable.");
+    }
+
+    const bytes = new Uint8Array(32);
+    globalThis.crypto.getRandomValues(bytes);
+    const token = Array.from(bytes, (byte) =>
+        byte.toString(16).padStart(2, "0")
+    ).join("");
+
+    compatibilityTokenMemory = token;
+    try {
+        localStorage.setItem(storageKey, token);
+    } catch {
+        // Keep the token for this page session.
+    }
+
+    return token;
+}
 
 export async function loadDevices() {
     if (devicesCache) return devicesCache;
@@ -167,7 +202,7 @@ export async function loadGameCompatibility(portIds) {
 export function createCompatibilityActions() {
     return {
         async submitReport({ portId, deviceId, works }) {
-            const token = await getRatingToken();
+            const token = getCompatibilityToken();
 
             const response = await fetch(COMPATIBILITY_API_URL, {
                 method: "POST",
