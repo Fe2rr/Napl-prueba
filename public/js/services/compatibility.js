@@ -201,10 +201,9 @@ export function createCompatibilityActions() {
                 );
             }
 
-            const refreshed = await loadGameCompatibility([portId]);
             return {
                 report: data.report,
-                summary: refreshed[portId] || null,
+                summary: data.summary || null,
             };
         },
 
