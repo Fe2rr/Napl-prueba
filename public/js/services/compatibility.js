@@ -2,7 +2,7 @@
  * NAPL — COMPATIBILITY SERVICE
  *
  * Manages Works? Yes/No reports paired with strict Android device selection
- * from the AndroidDeviceNames database (public/assets/data/devices.json).
+ * from the Supabase devices catalog.
  */
 
 import {
