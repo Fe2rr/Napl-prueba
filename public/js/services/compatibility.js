@@ -15,8 +15,43 @@ import { getRatingToken } from "./ratings.js";
 let devicesCache = null;
 let devicesPromise = null;
 
+// Bump this version whenever the device catalog's data or shape changes.
+// It is also sent to the API so the browser and any intermediary caches can
+// distinguish the new catalog from an older one.
+const DEVICE_CATALOG_VERSION = "2";
+const DEVICE_CATALOG_STORAGE_KEY = `napl_device_catalog_v${DEVICE_CATALOG_VERSION}`;
+
 const COMPATIBILITY_CACHE_PREFIX = "napl_compatibility_v2:";
 const COMPATIBILITY_CACHE_TTL = 60_000;
+
+function readStoredDeviceCatalog() {
+    try {
+        const raw = localStorage.getItem(DEVICE_CATALOG_STORAGE_KEY);
+        if (!raw) return null;
+
+        const devices = JSON.parse(raw);
+        if (!Array.isArray(devices)) {
+            localStorage.removeItem(DEVICE_CATALOG_STORAGE_KEY);
+            return null;
+        }
+
+        return devices;
+    } catch {
+        // Storage can be disabled, unavailable, or over quota.
+        return null;
+    }
+}
+
+function storeDeviceCatalog(devices) {
+    try {
+        localStorage.setItem(
+            DEVICE_CATALOG_STORAGE_KEY,
+            JSON.stringify(devices)
+        );
+    } catch {
+        // The catalog still works for this page session if storage is full.
+    }
+}
 
 export const COMPAT_STATUSES = [
     {
@@ -249,9 +284,17 @@ export async function loadDevices() {
 
     if (!devicesPromise) {
         devicesPromise = (async () => {
+            // Persist the raw API records so repeat visits do not download the
+            // ~800 KB catalog again. The versioned key is invalidated by
+            // incrementing DEVICE_CATALOG_VERSION when the catalog changes.
+            const storedDevices = readStoredDeviceCatalog();
+            if (storedDevices) {
+                devicesCache = storedDevices.map(normalizeDeviceRecord);
+                return devicesCache;
+            }
+
             const response = await fetch(
-                `${COMPATIBILITY_API_URL}?action=devices&catalog_version=2`,
-                { cache: "no-store" }
+                `${COMPATIBILITY_API_URL}?action=devices&catalog_version=${DEVICE_CATALOG_VERSION}`
             );
             if (!response.ok) {
                 throw new Error(
@@ -264,6 +307,7 @@ export async function loadDevices() {
                 throw new Error("Device database returned an invalid format.");
             }
 
+            storeDeviceCatalog(payload.devices);
             devicesCache = payload.devices.map(normalizeDeviceRecord);
             return devicesCache;
         })();
